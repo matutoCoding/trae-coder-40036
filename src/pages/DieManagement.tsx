@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useProductionStore } from '@/store/productionStore';
-import { Wrench, Plus, Search, Filter, Info, Cog, AlertTriangle, CheckCircle2, XCircle, TrendingUp, Clock, X, Play, Square, Settings } from 'lucide-react';
+import { Wrench, Plus, Search, Filter, Info, Cog, AlertTriangle, CheckCircle2, XCircle, TrendingUp, Clock, X, Play, Square, Settings, History, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Die, DieUsageRecord } from '@/data/types';
+import type { Die, DieUsageRecord, DieHistoryRecord } from '@/data/types';
 
 const dieStatusConfig: Record<string, { label: string; color: string; bg: string; border: string }> = {
   available: { label: '待用', color: 'text-emerald-600', bg: 'bg-emerald-500', border: 'border-emerald-200' },
@@ -14,10 +14,12 @@ const dieStatusConfig: Record<string, { label: string; color: string; bg: string
 export default function DieManagement() {
   const dies = useProductionStore((s) => s.dies);
   const dieUsageRecords = useProductionStore((s) => s.dieUsageRecords);
+  const dieHistoryRecords = useProductionStore((s) => s.dieHistoryRecords);
   const addDie = useProductionStore((s) => s.addDie);
   const mountDieToMachine = useProductionStore((s) => s.mountDieToMachine);
   const unmountDieFromMachine = useProductionStore((s) => s.unmountDieFromMachine);
   const addDieRepairRecord = useProductionStore((s) => s.addDieRepairRecord);
+  const completeDieRepair = useProductionStore((s) => s.completeDieRepair);
   const updateDie = useProductionStore((s) => s.updateDie);
 
   const [filter, setFilter] = useState<string>('all');
@@ -332,7 +334,7 @@ export default function DieManagement() {
                     {selected.status === 'repair' && (
                       <button
                         onClick={() => {
-                          updateDie(selected.id, { status: 'available', lastMaintenance: formatDate(new Date()) });
+                          completeDieRepair(selected.id);
                         }}
                         className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
                       >
@@ -345,31 +347,107 @@ export default function DieManagement() {
 
                 <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200/60">
                   <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-slate-600" />
-                    最近上机记录
+                    <History className="w-4 h-4 text-slate-600" />
+                    模具履历时间线
                   </h4>
-                  {dieRecords.length > 0 ? (
-                    <div className="space-y-3">
-                      {dieRecords.map((r) => (
-                        <div key={r.id} className="p-3 rounded-lg bg-slate-50/60 border border-slate-100">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-semibold text-blue-600">{r.machineNo}</span>
-                            <span className="text-xs text-slate-500">{r.upTime.slice(0, 16)}</span>
-                          </div>
-                          <div className="text-xs text-slate-600 space-y-0.5">
-                            <div>挤压重量: <span className="font-semibold text-slate-700">{r.extrusionWeight}t</span></div>
-                            <div>磨损: <span className="font-semibold text-slate-700">{r.wearCondition}</span></div>
-                            <div>操作: <span className="font-semibold text-slate-700">{r.operator}</span></div>
-                          </div>
+                  {(() => {
+                    const history = dieHistoryRecords
+                      .filter((r) => r.dieId === selectedDie)
+                      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                    
+                    const typeIcon: Record<string, typeof Play> = {
+                      mount: Play,
+                      unmount: Square,
+                      repair_start: Settings,
+                      repair_complete: CheckCircle2,
+                      create: Plus,
+                      scrap: XCircle,
+                      maintenance: Wrench,
+                    };
+                    
+                    const typeColor: Record<string, string> = {
+                      mount: 'bg-blue-500',
+                      unmount: 'bg-orange-500',
+                      repair_start: 'bg-amber-500',
+                      repair_complete: 'bg-emerald-500',
+                      create: 'bg-slate-500',
+                      scrap: 'bg-red-500',
+                      maintenance: 'bg-purple-500',
+                    };
+                    
+                    const statusLabel: Record<string, string> = {
+                      available: '待用',
+                      onMachine: '上机中',
+                      repair: '维修中',
+                      scrapped: '已报废',
+                    };
+                    
+                    if (history.length === 0) {
+                      return (
+                        <div className="text-center py-6">
+                          <XCircle className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                          <div className="text-sm text-slate-400">暂无履历记录</div>
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-6">
-                      <XCircle className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                      <div className="text-sm text-slate-400">暂无上机记录</div>
-                    </div>
-                  )}
+                      );
+                    }
+                    
+                    return (
+                      <div className="relative space-y-4 max-h-80 overflow-y-auto pr-1">
+                        {history.map((record, idx) => {
+                          const Icon = typeIcon[record.type] || Info;
+                          const colorBg = typeColor[record.type] || 'bg-slate-500';
+                          const isLast = idx === history.length - 1;
+                          return (
+                            <div key={record.id} className="relative pl-7">
+                              {!isLast && (
+                                <div className="absolute left-[11px] top-6 w-0.5 h-full bg-slate-200" />
+                              )}
+                              <div className={`absolute left-0 top-1 w-6 h-6 rounded-full ${colorBg} flex items-center justify-center shadow-md`}>
+                                <Icon className="w-3 h-3 text-white" />
+                              </div>
+                              <div className="bg-slate-50/70 rounded-lg p-3 border border-slate-100">
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <span className="text-sm font-bold text-slate-800">{record.title}</span>
+                                  <span className="text-[10px] text-slate-400 font-mono">{record.timestamp.slice(5, 16)}</span>
+                                </div>
+                                <p className="text-xs text-slate-600 mb-2">{record.description}</p>
+                                {record.statusBefore && record.statusAfter && (
+                                  <div className="flex items-center gap-1.5 text-[10px]">
+                                    <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
+                                      {statusLabel[record.statusBefore] || record.statusBefore}
+                                    </span>
+                                    <ArrowRight className="w-3 h-3 text-slate-400" />
+                                    <span className={cn(
+                                      'px-1.5 py-0.5 rounded font-medium',
+                                      record.statusAfter === 'available' && 'bg-emerald-100 text-emerald-700',
+                                      record.statusAfter === 'onMachine' && 'bg-blue-100 text-blue-700',
+                                      record.statusAfter === 'repair' && 'bg-amber-100 text-amber-700',
+                                      record.statusAfter === 'scrapped' && 'bg-red-100 text-red-700',
+                                    )}>
+                                      {statusLabel[record.statusAfter] || record.statusAfter}
+                                    </span>
+                                  </div>
+                                )}
+                                {record.machineNo && (
+                                  <div className="text-[10px] text-slate-500 mt-1">
+                                    机台：<span className="font-medium text-slate-700">{record.machineNo}</span>
+                                  </div>
+                                )}
+                                {record.repairNote && (
+                                  <div className="text-[10px] text-slate-500 mt-1">
+                                    说明：<span className="font-medium text-slate-700">{record.repairNote}</span>
+                                  </div>
+                                )}
+                                <div className="text-[10px] text-slate-400 mt-1">
+                                  操作人：<span className="font-medium">{record.operator}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
               </>
             );

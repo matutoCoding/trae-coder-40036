@@ -113,9 +113,9 @@ export default function Casting() {
             <table className="w-full text-sm">
               <thead className="bg-gradient-to-r from-orange-50 to-amber-50/50">
                 <tr>
-                  <th className="text-left px-5 py-3 font-semibold text-slate-700 text-xs uppercase tracking-wider">批次号</th>
-                  {alloyElements.slice(0, 6).map((e) => (
-                    <th key={e.key} className="text-left px-3 py-3 font-semibold text-slate-700 text-xs uppercase tracking-wider">{e.key}</th>
+                  <th className="text-left px-4 py-3 font-semibold text-slate-700 text-xs uppercase tracking-wider">批次号</th>
+                  {alloyElements.map((e) => (
+                    <th key={e.key} className="text-left px-2.5 py-3 font-semibold text-slate-700 text-xs uppercase tracking-wider">{e.key}</th>
                   ))}
                   <th className="text-left px-3 py-3 font-semibold text-slate-700 text-xs uppercase tracking-wider">重量(kg)</th>
                   <th className="text-left px-3 py-3 font-semibold text-slate-700 text-xs uppercase tracking-wider">均质处理</th>
@@ -127,7 +127,7 @@ export default function Casting() {
                   const cfg = statusConfig[b.status];
                   return (
                     <tr key={b.id} className="hover:bg-orange-50/30 transition-colors">
-                      <td className="px-5 py-3.5">
+                      <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2">
                           <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center">
                             <Flame className="w-4 h-4 text-orange-500" />
@@ -135,13 +135,13 @@ export default function Casting() {
                           <span className="font-mono font-bold text-slate-800">{b.batchNumber}</span>
                         </div>
                       </td>
-                      {alloyElements.slice(0, 6).map((e) => {
+                      {alloyElements.map((e) => {
                         const val = b[e.key as keyof typeof b] as number;
                         const ok = checkElement(e.key, val);
                         return (
-                          <td key={e.key} className="px-3 py-3.5">
+                          <td key={e.key} className="px-2.5 py-3.5">
                             <span className={cn(
-                              'font-mono font-semibold tabular-nums',
+                              'font-mono font-semibold tabular-nums text-xs',
                               ok ? 'text-emerald-600' : 'text-red-500'
                             )}>
                               {val}

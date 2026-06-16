@@ -4,6 +4,7 @@ import type {
   CastBillet,
   Die,
   DieUsageRecord,
+  DieHistoryRecord,
   ExtrusionBatch,
   QuenchingRecord,
   AgingRecord,
@@ -18,6 +19,7 @@ import {
   mockCastBillets,
   mockDies,
   mockDieUsageRecords,
+  mockDieHistoryRecords,
   mockExtrusionBatches,
   mockQuenchingRecords,
   mockAgingRecords,
@@ -31,6 +33,7 @@ interface ProductionState {
   castBillets: CastBillet[];
   dies: Die[];
   dieUsageRecords: DieUsageRecord[];
+  dieHistoryRecords: DieHistoryRecord[];
   extrusionBatches: ExtrusionBatch[];
   quenchingRecords: QuenchingRecord[];
   agingRecords: AgingRecord[];
@@ -45,15 +48,20 @@ interface ProductionState {
   updateDie: (id: string, data: Partial<Die>) => void;
   addDieUsageRecord: (record: Omit<DieUsageRecord, 'id'>) => void;
   updateDieUsageRecord: (id: string, data: Partial<DieUsageRecord>) => void;
+  addDieHistoryRecord: (record: Omit<DieHistoryRecord, 'id'>) => void;
   addDieRepairRecord: (dieId: string, note: string) => void;
   mountDieToMachine: (dieId: string, machineNo: string, operator: string) => void;
   unmountDieFromMachine: (recordId: string, extrusionWeight: number, wearCondition: string) => void;
+  completeDieRepair: (dieId: string) => void;
   addExtrusionBatch: (batch: Omit<ExtrusionBatch, 'id'>) => void;
   updateExtrusionBatch: (id: string, data: Partial<ExtrusionBatch>) => void;
+  completeExtrusionBatch: (id: string, outputWeight: number) => void;
   addQuenchingRecord: (record: Omit<QuenchingRecord, 'id'>) => void;
+  updateQuenchingRecord: (id: string, data: Partial<QuenchingRecord>) => void;
   addAgingRecord: (record: Omit<AgingRecord, 'id'>) => void;
   updateAgingRecord: (id: string, data: Partial<AgingRecord>) => void;
   addSurfaceRecord: (record: Omit<SurfaceRecord, 'id'>) => void;
+  updateSurfaceRecord: (id: string, data: Partial<SurfaceRecord>) => void;
   addPackageRecord: (record: Omit<PackageRecord, 'id'>) => void;
   updateRealtimeData: () => void;
   manualRefreshRealtime: (batchId: string) => void;
@@ -137,6 +145,7 @@ const initialState = {
   castBillets: mockCastBillets,
   dies: mockDies,
   dieUsageRecords: mockDieUsageRecords,
+  dieHistoryRecords: mockDieHistoryRecords,
   extrusionBatches: mockExtrusionBatches,
   quenchingRecords: mockQuenchingRecords,
   agingRecords: mockAgingRecords,
@@ -171,6 +180,20 @@ export const useProductionStore = create<ProductionState>()(
         const newDie = { ...die, id: generateId('d') };
         set((state) => ({
           dies: [...state.dies, newDie],
+          dieHistoryRecords: [
+            ...state.dieHistoryRecords,
+            {
+              id: generateId('dh'),
+              dieId: newDie.id,
+              dieNumber: newDie.dieNumber,
+              type: 'create' as const,
+              title: '模具入库',
+              description: `新模具入库，型号 ${newDie.model}，规格 ${newDie.specification}`,
+              operator: '仓管员',
+              timestamp: formatDateTime(new Date()),
+              statusAfter: newDie.status,
+            },
+          ],
         }));
         get().computeProcessStatus();
       },
@@ -197,12 +220,42 @@ export const useProductionStore = create<ProductionState>()(
           ),
         })),
 
-      addDieRepairRecord: (dieId, note) => {
+      addDieHistoryRecord: (record) => {
         set((state) => ({
-          dies: state.dies.map((d) =>
-            d.id === dieId ? { ...d, status: 'repair' as const, lastMaintenance: formatDate(new Date()) } : d
-          ),
+          dieHistoryRecords: [
+            ...state.dieHistoryRecords,
+            { ...record, id: generateId('dh') },
+          ],
         }));
+      },
+
+      addDieRepairRecord: (dieId, note) => {
+        const now = new Date();
+        set((state) => {
+          const die = state.dies.find(d => d.id === dieId);
+          if (!die) return state;
+          return {
+            dies: state.dies.map((d) =>
+              d.id === dieId ? { ...d, status: 'repair' as const, lastMaintenance: formatDate(now) } : d
+            ),
+            dieHistoryRecords: [
+              ...state.dieHistoryRecords,
+              {
+                id: generateId('dh'),
+                dieId,
+                dieNumber: die.dieNumber,
+                type: 'repair_start' as const,
+                title: '送修保养',
+                description: note || '模具送修保养',
+                operator: '维修工',
+                timestamp: formatDateTime(now),
+                statusBefore: die.status,
+                statusAfter: 'repair',
+                repairNote: note,
+              },
+            ],
+          };
+        });
         get().computeProcessStatus();
       },
 
@@ -226,6 +279,22 @@ export const useProductionStore = create<ProductionState>()(
                 extrusionWeight: 0,
                 wearCondition: '正常',
                 operator,
+              },
+            ],
+            dieHistoryRecords: [
+              ...state.dieHistoryRecords,
+              {
+                id: generateId('dh'),
+                dieId,
+                dieNumber: die.dieNumber,
+                type: 'mount' as const,
+                title: '模具上机',
+                description: `在 ${machineNo} 上机，操作人员 ${operator}`,
+                operator,
+                timestamp: formatDateTime(now),
+                statusBefore: die.status,
+                statusAfter: 'onMachine',
+                machineNo,
               },
             ],
           };
@@ -256,6 +325,53 @@ export const useProductionStore = create<ProductionState>()(
                 ? { ...r, downTime: formatDateTime(now), extrusionWeight, wearCondition }
                 : r
             ),
+            dieHistoryRecords: [
+              ...state.dieHistoryRecords,
+              {
+                id: generateId('dh'),
+                dieId: record.dieId,
+                dieNumber: record.dieNumber,
+                type: 'unmount' as const,
+                title: '模具下机',
+                description: `挤压完成下机，挤压重量 ${extrusionWeight}吨，磨损情况：${wearCondition}`,
+                operator: record.operator,
+                timestamp: formatDateTime(now),
+                statusBefore: 'onMachine',
+                statusAfter: 'available',
+                machineNo: record.machineNo,
+                extrusionWeight,
+                wearCondition,
+              },
+            ],
+          };
+        });
+        get().computeProcessStatus();
+      },
+
+      completeDieRepair: (dieId) => {
+        const now = new Date();
+        set((state) => {
+          const die = state.dies.find(d => d.id === dieId);
+          if (!die) return state;
+          return {
+            dies: state.dies.map((d) =>
+              d.id === dieId ? { ...d, status: 'available' as const, lastMaintenance: formatDate(now) } : d
+            ),
+            dieHistoryRecords: [
+              ...state.dieHistoryRecords,
+              {
+                id: generateId('dh'),
+                dieId,
+                dieNumber: die.dieNumber,
+                type: 'repair_complete' as const,
+                title: '维修完成',
+                description: '模具维修保养完成，恢复待用状态',
+                operator: '维修工',
+                timestamp: formatDateTime(now),
+                statusBefore: die.status,
+                statusAfter: 'available',
+              },
+            ],
           };
         });
         get().computeProcessStatus();
@@ -276,6 +392,47 @@ export const useProductionStore = create<ProductionState>()(
           ),
         })),
 
+      completeExtrusionBatch: (id, outputWeight) => {
+        const now = new Date();
+        set((state) => {
+          const batch = state.extrusionBatches.find(b => b.id === id);
+          if (!batch || batch.status !== 'running') return state;
+          
+          const updatedBatch = {
+            ...batch,
+            status: 'completed' as const,
+            endTime: formatDateTime(now),
+            outputWeight,
+          };
+          
+          const newQuenching: Omit<QuenchingRecord, 'id'> = {
+            batchId: batch.id,
+            batchNumber: batch.batchNumber,
+            status: 'pending',
+            airTemp: 0,
+            airSpeed: 0,
+            zone1Temp: 0,
+            zone2Temp: 0,
+            zone3Temp: 0,
+            coolingRate: 0,
+            hardness: 0,
+            startTime: '',
+            operator: '',
+          };
+          
+          return {
+            extrusionBatches: state.extrusionBatches.map(b =>
+              b.id === id ? updatedBatch : b
+            ),
+            quenchingRecords: [
+              ...state.quenchingRecords,
+              { ...newQuenching, id: generateId('qr') },
+            ],
+          };
+        });
+        get().computeProcessStatus();
+      },
+
       addQuenchingRecord: (record) => {
         set((state) => ({
           quenchingRecords: [
@@ -285,6 +442,13 @@ export const useProductionStore = create<ProductionState>()(
         }));
         get().computeProcessStatus();
       },
+
+      updateQuenchingRecord: (id, data) =>
+        set((state) => ({
+          quenchingRecords: state.quenchingRecords.map((r) =>
+            r.id === id ? { ...r, ...data } : r
+          ),
+        })),
 
       addAgingRecord: (record) => {
         const newRecord = {
@@ -314,6 +478,13 @@ export const useProductionStore = create<ProductionState>()(
         }));
         get().computeProcessStatus();
       },
+
+      updateSurfaceRecord: (id, data) =>
+        set((state) => ({
+          surfaceRecords: state.surfaceRecords.map((r) =>
+            r.id === id ? { ...r, ...data } : r
+          ),
+        })),
 
       addPackageRecord: (record) => {
         set((state) => ({
@@ -385,6 +556,7 @@ export const useProductionStore = create<ProductionState>()(
         castBillets: state.castBillets,
         dies: state.dies,
         dieUsageRecords: state.dieUsageRecords,
+        dieHistoryRecords: state.dieHistoryRecords,
         extrusionBatches: state.extrusionBatches,
         quenchingRecords: state.quenchingRecords,
         agingRecords: state.agingRecords,

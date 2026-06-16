@@ -32,10 +32,13 @@ export default function Extrusion() {
   const addExtrusionBatch = useProductionStore((s) => s.addExtrusionBatch);
   const manualRefreshRealtime = useProductionStore((s) => s.manualRefreshRealtime);
   const updateExtrusionBatch = useProductionStore((s) => s.updateExtrusionBatch);
+  const completeExtrusionBatch = useProductionStore((s) => s.completeExtrusionBatch);
 
   const [selectedBatchId, setSelectedBatchId] = useState(batches.find(b => b.status === 'running')?.id || batches[0]?.id);
   const [speedData, setSpeedData] = useState(generateSpeedData());
   const [showNewBatch, setShowNewBatch] = useState(false);
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [completeWeight, setCompleteWeight] = useState(1200);
   const [selectedBilletId, setSelectedBilletId] = useState<string | null>(null);
   const [selectedDieId, setSelectedDieId] = useState<string | null>(null);
   const [machineNo, setMachineNo] = useState('挤压机01');
@@ -325,6 +328,29 @@ export default function Extrusion() {
                   </div>
                 ))}
               </div>
+              
+              {selected.status === 'running' && (
+                <div className="mt-5 pt-4 border-t border-slate-100">
+                  <button
+                    onClick={() => {
+                      setCompleteWeight(Math.round(selected.outputWeight || 1200));
+                      setShowCompleteModal(true);
+                    }}
+                    className="w-full px-6 py-3 text-sm font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all shadow-md shadow-emerald-500/20 flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle2 className="w-5 h-5" />
+                    完成挤压，转入淬火工序
+                  </button>
+                </div>
+              )}
+              {selected.status === 'completed' && (
+                <div className="mt-5 pt-4 border-t border-slate-100">
+                  <div className="flex items-center gap-2 text-sm text-emerald-600 bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span className="font-medium">本批次已完成挤压，已流转至在线淬火工序</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </>
@@ -517,6 +543,78 @@ export default function Extrusion() {
                   开始挤压
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 完成挤压确认模态框 */}
+      {showCompleteModal && selected && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-emerald-50 to-teal-50">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                完成挤压确认
+              </h3>
+              <button onClick={() => setShowCompleteModal(false)} className="w-8 h-8 rounded-lg hover:bg-white/60 flex items-center justify-center text-slate-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-5">
+              <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-100">
+                <div className="text-sm mb-2">
+                  <span className="text-slate-500">批次号：</span>
+                  <span className="font-mono font-bold text-slate-800">{selected.batchNumber}</span>
+                </div>
+                <div className="text-sm mb-2">
+                  <span className="text-slate-500">型材类型：</span>
+                  <span className="font-medium text-slate-700">{selected.profileType}</span>
+                </div>
+                <div className="text-sm">
+                  <span className="text-slate-500">机台：</span>
+                  <span className="font-medium text-slate-700">{selected.machineNo}</span>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-2">
+                  产出重量 (kg)
+                </label>
+                <input
+                  type="number"
+                  value={completeWeight}
+                  onChange={(e) => setCompleteWeight(parseInt(e.target.value) || 0)}
+                  className="w-full px-4 py-3 border border-slate-200 rounded-lg text-lg font-mono font-bold tabular-nums text-center focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400"
+                />
+              </div>
+              <div className="bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl p-4 border border-blue-100">
+                <div className="text-xs text-slate-600 mb-2 flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 text-blue-500" />
+                  <span className="font-semibold">工序流转提示</span>
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  完成挤压后，本批次将自动流转至<span className="font-bold text-cyan-600">在线淬火</span>工序的待处理列表，
+                  可在淬火模块中继续处理。
+                </p>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3 bg-slate-50/50">
+              <button
+                onClick={() => setShowCompleteModal(false)}
+                className="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  completeExtrusionBatch(selected.id, completeWeight);
+                  setShowCompleteModal(false);
+                }}
+                className="px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 rounded-lg hover:from-emerald-700 hover:to-teal-700 shadow-md shadow-emerald-500/25 flex items-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                确认完成
+              </button>
             </div>
           </div>
         </div>

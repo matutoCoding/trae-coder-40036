@@ -41,6 +41,25 @@ export interface DieUsageRecord {
   operator: string;
 }
 
+export type DieHistoryType = 'mount' | 'unmount' | 'repair_start' | 'repair_complete' | 'create' | 'scrap' | 'maintenance';
+
+export interface DieHistoryRecord {
+  id: string;
+  dieId: string;
+  dieNumber: string;
+  type: DieHistoryType;
+  title: string;
+  description: string;
+  operator: string;
+  timestamp: string;
+  statusBefore?: string;
+  statusAfter?: string;
+  machineNo?: string;
+  extrusionWeight?: number;
+  wearCondition?: string;
+  repairNote?: string;
+}
+
 export interface ExtrusionBatch {
   id: string;
   batchNumber: string;
@@ -70,6 +89,7 @@ export interface QuenchingRecord {
   id: string;
   batchId: string;
   batchNumber: string;
+  status: 'pending' | 'processing' | 'completed';
   airTemp: number;
   airSpeed: number;
   zone1Temp: number;
@@ -78,7 +98,7 @@ export interface QuenchingRecord {
   coolingRate: number;
   hardness: number;
   startTime: string;
-  endTime: string;
+  endTime?: string;
   operator: string;
 }
 
@@ -110,6 +130,7 @@ export interface SurfaceRecord {
   batchId: string;
   batchNumber: string;
   processType: 'oxidation' | 'spraying';
+  status: 'pending' | 'processing' | 'completed';
   bathTemp: number;
   voltage: number;
   current: number;
@@ -126,6 +147,9 @@ export interface PackageRecord {
   id: string;
   batchId: string;
   batchNumber: string;
+  surfaceRecordId?: string;
+  surfaceProcessType?: 'oxidation' | 'spraying';
+  surfaceColor?: string;
   cutLength: number;
   pieceCount: number;
   totalWeight: number;

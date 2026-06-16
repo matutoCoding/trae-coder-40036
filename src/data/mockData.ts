@@ -2,6 +2,7 @@ import type {
   CastBillet,
   Die,
   DieUsageRecord,
+  DieHistoryRecord,
   ExtrusionBatch,
   QuenchingRecord,
   AgingRecord,
@@ -181,6 +182,80 @@ export const mockDieUsageRecords: DieUsageRecord[] = [
   },
 ];
 
+export const mockDieHistoryRecords: DieHistoryRecord[] = [
+  {
+    id: 'dh001', dieId: 'd002', dieNumber: 'MJ-1002',
+    type: 'mount', title: '模具上机',
+    description: '在挤压机01上机，操作人员张师傅',
+    operator: '张师傅', timestamp: formatDateTime(offsetHours(8)),
+    statusBefore: 'available', statusAfter: 'onMachine',
+    machineNo: '挤压机01',
+  },
+  {
+    id: 'dh002', dieId: 'd006', dieNumber: 'MJ-1006',
+    type: 'mount', title: '模具上机',
+    description: '在挤压机02上机，操作人员李师傅',
+    operator: '李师傅', timestamp: formatDateTime(offsetHours(5)),
+    statusBefore: 'available', statusAfter: 'onMachine',
+    machineNo: '挤压机02',
+  },
+  {
+    id: 'dh003', dieId: 'd001', dieNumber: 'MJ-1001',
+    type: 'mount', title: '模具上机',
+    description: '在挤压机01上机，操作人员张师傅',
+    operator: '张师傅', timestamp: formatDateTime(offsetHours(48)),
+    statusBefore: 'available', statusAfter: 'onMachine',
+    machineNo: '挤压机01',
+  },
+  {
+    id: 'dh004', dieId: 'd001', dieNumber: 'MJ-1001',
+    type: 'unmount', title: '模具下机',
+    description: '挤压完成下机，挤压重量2.1吨，轻微磨损',
+    operator: '张师傅', timestamp: formatDateTime(offsetHours(32)),
+    statusBefore: 'onMachine', statusAfter: 'available',
+    machineNo: '挤压机01', extrusionWeight: 2.1, wearCondition: '轻微磨损',
+  },
+  {
+    id: 'dh005', dieId: 'd004', dieNumber: 'MJ-1004',
+    type: 'repair_start', title: '送修保养',
+    description: '工作带磨损严重，送修抛光',
+    operator: '维修工', timestamp: formatDateTime(offsetHours(12)),
+    statusBefore: 'available', statusAfter: 'repair',
+    repairNote: '工作带抛光+氮化处理',
+  },
+  {
+    id: 'dh006', dieId: 'd010', dieNumber: 'MJ-1010',
+    type: 'repair_start', title: '送修保养',
+    description: '导柱间隙过大，送修调整',
+    operator: '维修工', timestamp: formatDateTime(offsetHours(6)),
+    statusBefore: 'onMachine', statusAfter: 'repair',
+    repairNote: '导柱更换+弹簧调整',
+  },
+  {
+    id: 'dh007', dieId: 'd005', dieNumber: 'MJ-1005',
+    type: 'mount', title: '模具上机',
+    description: '在挤压机03上机，操作人员王师傅',
+    operator: '王师傅', timestamp: formatDateTime(offsetHours(36)),
+    statusBefore: 'available', statusAfter: 'onMachine',
+    machineNo: '挤压机03',
+  },
+  {
+    id: 'dh008', dieId: 'd005', dieNumber: 'MJ-1005',
+    type: 'unmount', title: '模具下机',
+    description: '挤压完成下机，挤压重量1.8吨，磨损正常',
+    operator: '王师傅', timestamp: formatDateTime(offsetHours(20)),
+    statusBefore: 'onMachine', statusAfter: 'available',
+    machineNo: '挤压机03', extrusionWeight: 1.8, wearCondition: '正常',
+  },
+  {
+    id: 'dh009', dieId: 'd007', dieNumber: 'MJ-1007',
+    type: 'scrap', title: '模具报废',
+    description: '超过设计寿命，裂纹严重，报废处理',
+    operator: '主管', timestamp: formatDateTime(offsetHours(96)),
+    statusBefore: 'available', statusAfter: 'scrapped',
+  },
+];
+
 export const mockExtrusionBatches: ExtrusionBatch[] = [
   {
     id: 'eb001', batchNumber: 'JY20260617001', billetId: 'cb001', billetBatchNumber: 'ZB20260617001',
@@ -232,6 +307,7 @@ export const mockExtrusionBatches: ExtrusionBatch[] = [
 export const mockQuenchingRecords: QuenchingRecord[] = [
   {
     id: 'qr001', batchId: 'eb001', batchNumber: 'JY20260617001',
+    status: 'completed',
     airTemp: 25, airSpeed: 18.5, zone1Temp: 245, zone2Temp: 168, zone3Temp: 95,
     coolingRate: 45, hardness: 12.5,
     startTime: formatDateTime(offsetHours(5)), endTime: formatDateTime(offsetHours(4.5)),
@@ -239,6 +315,7 @@ export const mockQuenchingRecords: QuenchingRecord[] = [
   },
   {
     id: 'qr002', batchId: 'eb004', batchNumber: 'JY20260617004',
+    status: 'completed',
     airTemp: 26, airSpeed: 20.2, zone1Temp: 252, zone2Temp: 172, zone3Temp: 98,
     coolingRate: 48, hardness: 13.2,
     startTime: formatDateTime(offsetHours(9)), endTime: formatDateTime(offsetHours(8.5)),
@@ -246,9 +323,10 @@ export const mockQuenchingRecords: QuenchingRecord[] = [
   },
   {
     id: 'qr003', batchId: 'eb002', batchNumber: 'JY20260617002',
+    status: 'processing',
     airTemp: 27, airSpeed: 19.8, zone1Temp: 248, zone2Temp: 165, zone3Temp: 92,
     coolingRate: 46, hardness: 0,
-    startTime: formatDateTime(offsetHours(3)), endTime: '',
+    startTime: formatDateTime(offsetHours(3)),
     operator: '陈工',
   },
 ];
@@ -299,13 +377,15 @@ export const mockAgingRecords: AgingRecord[] = [
 export const mockSurfaceRecords: SurfaceRecord[] = [
   {
     id: 'sr001', batchId: 'eb004', batchNumber: 'JY20260617004',
-    processType: 'oxidation', bathTemp: 20, voltage: 14, current: 1200,
+    processType: 'oxidation', status: 'completed',
+    bathTemp: 20, voltage: 14, current: 1200,
     processTime: 35, filmThickness: 12, color: '银白', adhesion: 0,
     pretreatment: '碱洗+酸洗', operator: '周师傅', date: formatDate(offsetHours(1)),
   },
   {
     id: 'sr002', batchId: 'eb001', batchNumber: 'JY20260617001',
-    processType: 'spraying', bathTemp: 22, voltage: 80, current: 0,
+    processType: 'spraying', status: 'completed',
+    bathTemp: 22, voltage: 80, current: 0,
     processTime: 20, filmThickness: 65, color: '哑光白', adhesion: 1,
     pretreatment: '磷化处理', operator: '吴师傅', date: formatDate(offsetHours(0.5)),
   },

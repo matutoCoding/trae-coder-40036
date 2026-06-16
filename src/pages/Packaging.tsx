@@ -13,11 +13,14 @@ const gradeColor: Record<string, { bg: string; text: string; label: string }> = 
 export default function Packaging() {
   const packages = useProductionStore((s) => s.packageRecords);
   const batches = useProductionStore((s) => s.extrusionBatches);
+  const surfaceRecords = useProductionStore((s) => s.surfaceRecords);
+  const addPackageRecord = useProductionStore((s) => s.addPackageRecord);
   const [search, setSearch] = useState('');
   const [gradeFilter, setGradeFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
 
   const [form, setForm] = useState({
+    surfaceRecordId: '',
     cutLength: 6000,
     pieceCount: 100,
     grade: 'A' as 'A' | 'B' | 'C',
@@ -26,6 +29,8 @@ export default function Packaging() {
     orderNo: 'DD20260615-009',
     operator: '孙师傅',
   });
+
+  const completedSurfaces = surfaceRecords.filter((s) => s.status === 'completed');
 
   const totalPieces = packages.reduce((s, p) => s + p.pieceCount, 0);
   const totalWeight = packages.reduce((s, p) => s + p.totalWeight, 0);
@@ -47,7 +52,11 @@ export default function Packaging() {
   ];
 
   const filtered = packages.filter((p) => {
-    const matchSearch = p.frameNo.toLowerCase().includes(search.toLowerCase()) || p.batchNumber.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = 
+      p.frameNo.toLowerCase().includes(search.toLowerCase()) || 
+      p.batchNumber.toLowerCase().includes(search.toLowerCase()) ||
+      p.orderNo.toLowerCase().includes(search.toLowerCase()) ||
+      p.customer.toLowerCase().includes(search.toLowerCase());
     const matchGrade = gradeFilter === 'all' || p.grade === gradeFilter;
     return matchSearch && matchGrade;
   });
@@ -107,8 +116,8 @@ export default function Packaging() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="框号/批次号..."
-              className="pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-lg w-48 focus:ring-2 focus:ring-indigo-500/30"
+              placeholder="框号/批次/订单/客户..."
+              className="pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-lg w-56 focus:ring-2 focus:ring-indigo-500/30"
             />
           </div>
           <button className="flex items-center gap-1.5 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
@@ -165,6 +174,12 @@ export default function Packaging() {
                       <td className="px-4 py-3">
                         <span className="font-mono text-xs text-slate-600">{p.batchNumber}</span>
                         <div className="text-[10px] text-slate-400">{batch?.profileType}</div>
+                        {p.surfaceProcessType && (
+                          <div className="text-[10px] text-indigo-500 mt-0.5 font-medium">
+                            {p.surfaceProcessType === 'oxidation' ? '阳极氧化' : '静电喷涂'}
+                            {p.surfaceColor && ` · ${p.surfaceColor}`}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <span className="font-semibold tabular-nums text-slate-700">{(p.cutLength / 1000).toFixed(1)}m</span>
@@ -280,6 +295,51 @@ export default function Packaging() {
               </button>
             </div>
             <div className="p-6 space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1.5">
+                  选择表面处理完成批次 <span className="text-amber-500">*</span>
+                </label>
+                <select
+                  value={form.surfaceRecordId}
+                  onChange={(e) => {
+                    const surface = completedSurfaces.find(s => s.id === e.target.value);
+                    const batch = batches.find(b => b.id === surface?.batchId);
+                    setForm({ 
+                      ...form, 
+                      surfaceRecordId: e.target.value,
+                    });
+                  }}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500/30"
+                >
+                  <option value="">-- 请选择表面处理批次 --</option>
+                  {completedSurfaces.map((s) => {
+                    const batch = batches.find(b => b.id === s.batchId);
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {s.batchNumber} - {batch?.profileType || ''} ({s.processType === 'oxidation' ? '阳极氧化' : '静电喷涂'} · {s.color || '银色'})
+                      </option>
+                    );
+                  })}
+                </select>
+                {form.surfaceRecordId && (
+                  <div className="mt-2 p-2.5 rounded-lg bg-indigo-50/50 border border-indigo-100">
+                    <div className="text-[11px] text-slate-600">
+                      {(() => {
+                        const s = completedSurfaces.find(r => r.id === form.surfaceRecordId);
+                        const b = batches.find(r => r.id === s?.batchId);
+                        if (!s) return null;
+                        return (
+                          <>
+                            <div>型材类型：<span className="font-medium text-slate-700">{b?.profileType}</span></div>
+                            <div>表面工艺：<span className="font-medium text-slate-700">{s.processType === 'oxidation' ? '阳极氧化' : '静电喷涂'}</span></div>
+                            <div>颜色：<span className="font-medium text-slate-700">{s.color || '银色'}</span></div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-semibold text-slate-600 block mb-1.5">定尺长度 (mm)</label>
@@ -380,9 +440,17 @@ export default function Packaging() {
               </button>
               <button
                 onClick={() => {
-                  useProductionStore.getState().addPackageRecord({
-                    batchId: 'eb005',
-                    batchNumber: 'JY20260617005',
+                  const surface = completedSurfaces.find(s => s.id === form.surfaceRecordId);
+                  if (!surface) {
+                    alert('请选择表面处理批次');
+                    return;
+                  }
+                  addPackageRecord({
+                    batchId: surface.batchId,
+                    batchNumber: surface.batchNumber,
+                    surfaceRecordId: surface.id,
+                    surfaceProcessType: surface.processType,
+                    surfaceColor: surface.color || '',
                     cutLength: form.cutLength,
                     pieceCount: form.pieceCount,
                     totalWeight: Math.round(form.pieceCount * (form.cutLength / 6000) * 8.5),
