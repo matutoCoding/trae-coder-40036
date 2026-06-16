@@ -20,6 +20,7 @@ import {
   Tag,
   ArrowRight,
 } from 'lucide-react';
+import { BatchTraceModal } from '@/components/BatchTraceModal';
 import {
   BarChart,
   Bar,
@@ -59,6 +60,8 @@ export default function SurfaceTreatment() {
     color: '',
     adhesion: 0,
   });
+  const [showTrace, setShowTrace] = useState(false);
+  const [traceBatchId, setTraceBatchId] = useState<string | null>(null);
 
   const pendingAgingRecords = useMemo(() => {
     return agingRecords.filter((a) => {
@@ -290,7 +293,7 @@ export default function SurfaceTreatment() {
                       <div>
                         <div className="flex items-center gap-2">
                           <Tag className="w-3.5 h-3.5 text-slate-400" />
-                          <span className="font-mono font-bold text-sm text-slate-800">
+                          <span className="font-mono font-bold text-sm text-slate-800 cursor-pointer hover:underline underline-offset-2 decoration-blue-400" onClick={() => { setTraceBatchId(aging.batchId); setShowTrace(true); }}>
                             {aging.batchNumber}
                           </span>
                         </div>
@@ -388,7 +391,7 @@ export default function SurfaceTreatment() {
             <div className="p-5">
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 p-4 rounded-xl bg-gradient-to-r from-slate-50 to-white border border-slate-100">
                 {[
-                  { k: '批次号', v: selected.batchNumber },
+                  { k: '批次号', v: selected.batchNumber, traceable: true },
                   { k: '处理日期', v: selected.date },
                   { k: '颜色', v: selected.color },
                   { k: '操作人员', v: selected.operator },
@@ -423,7 +426,12 @@ export default function SurfaceTreatment() {
                         {item.v}
                       </div>
                     ) : (
-                      <div className="text-sm font-bold text-slate-800 mt-0.5 tabular-nums">
+                      <div className={cn(
+                        'text-sm font-bold text-slate-800 mt-0.5 tabular-nums',
+                        item.traceable && 'font-mono cursor-pointer hover:underline underline-offset-2 decoration-blue-400'
+                      )}
+                        onClick={item.traceable ? () => { setTraceBatchId(selected.batchId); setShowTrace(true); } : undefined}
+                      >
                         {item.v}
                       </div>
                     )}
@@ -792,7 +800,7 @@ export default function SurfaceTreatment() {
                       modalData.processType === 'oxidation' ? 'text-emerald-600' : 'text-purple-600'
                     )}
                   />
-                  <span className="font-mono font-bold text-slate-800">{modalData.batchNumber}</span>
+                  <span className="font-mono font-bold text-slate-800 cursor-pointer hover:underline underline-offset-2 decoration-blue-400" onClick={() => { const a = agingRecords.find(x => x.id === modalData.agingId); if (a) { setTraceBatchId(a.batchId); setShowTrace(true); } }}>{modalData.batchNumber}</span>
                 </div>
               </div>
 
@@ -980,6 +988,10 @@ export default function SurfaceTreatment() {
             </div>
           </div>
         </div>
+      )}
+
+      {showTrace && traceBatchId && (
+        <BatchTraceModal batchId={traceBatchId} onClose={() => { setShowTrace(false); setTraceBatchId(null); }} />
       )}
     </div>
   );

@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useProductionStore } from '@/store/productionStore';
 import { ThermometerSun, Play, Clock, Check, Flame, Timer, ChevronDown, Plus, User, Factory, ArrowRight, CheckCircle, Inbox, Zap } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Legend } from 'recharts';
 import { cn } from '@/lib/utils';
 import type { QuenchingRecord } from '@/data/types';
+import { BatchTraceModal } from '@/components/BatchTraceModal';
 
 const agingStatusMap: Record<string, { label: string; color: string; bg: string; icon: typeof Play }> = {
   pending: { label: '待装炉', color: 'text-slate-600', bg: 'bg-slate-100', icon: Clock },
@@ -19,6 +20,7 @@ export default function Aging() {
   const extrusionBatches = useProductionStore((s) => s.extrusionBatches);
   const createAgingFromQuenching = useProductionStore((s) => s.createAgingFromQuenching);
   const completeAging = useProductionStore((s) => s.completeAging);
+  const fillLegacySourceData = useProductionStore((s) => s.fillLegacySourceData);
 
   const [selectedId, setSelectedId] = useState(records[0]?.id || '');
   const [showChargeModal, setShowChargeModal] = useState(false);
@@ -28,8 +30,14 @@ export default function Aging() {
     chargeAmount: 0,
     operator: '王工',
   });
+  const [showTrace, setShowTrace] = useState(false);
+  const [traceBatchId, setTraceBatchId] = useState<string | null>(null);
 
-  const pendingQuenchings = quenchingRecords.filter((q) => q.status === 'completed');
+  useEffect(() => {
+    fillLegacySourceData();
+  }, []);
+
+  const pendingQuenchings = quenchingRecords.filter((q) => q.status === 'completed' && !records.some((a) => a.quenchingRecordId === q.id));
 
   const selected = records.find((r) => r.id === selectedId);
 
@@ -71,6 +79,11 @@ export default function Aging() {
       chargeForm.chargeAmount,
       chargeForm.operator
     );
+    const latestRecords = useProductionStore.getState().agingRecords;
+    const newAging = latestRecords.find((r) => r.quenchingRecordId === selectedQuenching.id);
+    if (newAging) {
+      setSelectedId(newAging.id);
+    }
     setShowChargeModal(false);
     setSelectedQuenching(null);
   };
@@ -117,7 +130,7 @@ export default function Aging() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-sm font-bold text-slate-100">{q.batchNumber}</span>
+                            <span className="font-mono text-sm font-bold text-slate-100 cursor-pointer hover:underline underline-offset-2 decoration-blue-400" onClick={() => { setTraceBatchId(q.batchId); setShowTrace(true); }}>{q.batchNumber}</span>
                             <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">
                               淬火完成
                             </span>
@@ -405,7 +418,7 @@ export default function Aging() {
                   <h4 className="text-sm font-bold text-slate-800 mb-3">批次追溯信息</h4>
                   <div className="space-y-2 text-sm">
                     {[
-                      { k: '批次号', v: selected.batchNumber },
+                      { k: '批次号', v: selected.batchNumber, traceable: true },
                       { k: '型材类型', v: selected.profileType || '--' },
                       { k: '开始时间', v: selected.startTime || '--' },
                       { k: '结束时间', v: selected.endTime || '进行中' },
@@ -413,7 +426,11 @@ export default function Aging() {
                     ].map((item) => (
                       <div key={item.k} className="flex justify-between py-1.5 border-b border-slate-50 last:border-0">
                         <span className="text-slate-500">{item.k}</span>
-                        <span className="font-semibold text-slate-700 font-mono">{item.v}</span>
+                        {item.traceable ? (
+                          <span className="font-semibold text-slate-700 font-mono cursor-pointer hover:underline underline-offset-2 decoration-blue-400" onClick={() => { setTraceBatchId(selected.batchId); setShowTrace(true); }}>{item.v}</span>
+                        ) : (
+                          <span className="font-semibold text-slate-700 font-mono">{item.v}</span>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -451,7 +468,7 @@ export default function Aging() {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <span className="text-slate-500 text-xs">批次号</span>
-                    <div className="font-mono font-bold text-slate-800">{selectedQuenching.batchNumber}</div>
+                    <div className="font-mono font-bold text-slate-800 cursor-pointer hover:underline underline-offset-2 decoration-blue-400" onClick={() => { setTraceBatchId(selectedQuenching.batchId); setShowTrace(true); }}>{selectedQuenching.batchNumber}</div>
                   </div>
                   <div>
                     <span className="text-slate-500 text-xs">型材类型</span>
@@ -529,6 +546,10 @@ export default function Aging() {
             </div>
           </div>
         </div>
+      )}
+
+      {showTrace && traceBatchId && (
+        <BatchTraceModal batchId={traceBatchId} onClose={() => { setShowTrace(false); setTraceBatchId(null); }} />
       )}
     </div>
   );

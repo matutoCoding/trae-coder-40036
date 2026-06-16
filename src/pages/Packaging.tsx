@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useProductionStore } from '@/store/productionStore';
-import { Package, Scissors, CheckCircle, Search, Filter, Plus, User, FileText, Barcode, Truck, ArrowUpDown, Award, List, ChevronDown, ChevronUp } from 'lucide-react';
+import { Package, Scissors, CheckCircle, Search, Filter, Plus, User, FileText, Barcode, Truck, ArrowUpDown, Award, List, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { cn } from '@/lib/utils';
 
@@ -15,11 +15,14 @@ export default function Packaging() {
   const batches = useProductionStore((s) => s.extrusionBatches);
   const surfaceRecords = useProductionStore((s) => s.surfaceRecords);
   const addPackageRecord = useProductionStore((s) => s.addPackageRecord);
+  const fillLegacySourceData = useProductionStore((s) => s.fillLegacySourceData);
   const [search, setSearch] = useState('');
   const [gradeFilter, setGradeFilter] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'order'>('list');
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+  const [showStatementModal, setShowStatementModal] = useState(false);
+  const [statementOrder, setStatementOrder] = useState<typeof orderSummaries[0] | null>(null);
 
   const [form, setForm] = useState({
     surfaceRecordId: '',
@@ -90,6 +93,60 @@ export default function Packaging() {
       next.add(orderNo);
     }
     setExpandedOrders(next);
+  };
+
+  useEffect(() => {
+    fillLegacySourceData();
+  }, []);
+
+  const getSurfaceLabel = (p: typeof packages[0]) => {
+    if (!p.surfaceRecordId && !p.surfaceProcessType) {
+      return { text: '未关联', className: 'bg-slate-200 text-slate-500' };
+    }
+    if (p.surfaceProcessType === 'oxidation') {
+      return { text: '氧化', className: 'bg-blue-100 text-blue-700' };
+    }
+    return { text: '喷涂', className: 'bg-amber-100 text-amber-700' };
+  };
+
+  const getProfileType = (p: typeof packages[0]) => {
+    const batch = batches.find((b) => b.id === p.batchId);
+    return batch?.profileType || '未关联';
+  };
+
+  const computeSummaries = (records: typeof packages) => {
+    const surfaceMap: Record<string, { weight: number; pieces: number }> = {};
+    const colorMap: Record<string, { weight: number; pieces: number }> = {};
+    const profileMap: Record<string, { weight: number; pieces: number }> = {};
+
+    records.forEach((p) => {
+      const surfaceKey = p.surfaceProcessType === 'oxidation' ? '阳极氧化' : p.surfaceProcessType === 'spraying' ? '静电喷涂' : '未关联';
+      const colorKey = p.surfaceColor || '未关联';
+      const profileKey = getProfileType(p);
+
+      if (!surfaceMap[surfaceKey]) surfaceMap[surfaceKey] = { weight: 0, pieces: 0 };
+      surfaceMap[surfaceKey].weight += p.totalWeight;
+      surfaceMap[surfaceKey].pieces += p.pieceCount;
+
+      if (!colorMap[colorKey]) colorMap[colorKey] = { weight: 0, pieces: 0 };
+      colorMap[colorKey].weight += p.totalWeight;
+      colorMap[colorKey].pieces += p.pieceCount;
+
+      if (!profileMap[profileKey]) profileMap[profileKey] = { weight: 0, pieces: 0 };
+      profileMap[profileKey].weight += p.totalWeight;
+      profileMap[profileKey].pieces += p.pieceCount;
+    });
+
+    return {
+      surface: Object.entries(surfaceMap).map(([name, v]) => ({ name, ...v })),
+      color: Object.entries(colorMap).map(([name, v]) => ({ name, ...v })),
+      profile: Object.entries(profileMap).map(([name, v]) => ({ name, ...v })),
+    };
+  };
+
+  const openStatement = (order: typeof orderSummaries[0]) => {
+    setStatementOrder(order);
+    setShowStatementModal(true);
   };
 
   return (
@@ -331,70 +388,147 @@ export default function Packaging() {
                       </div>
                     </button>
                     {isExpanded && (
-                      <div className="border-t border-slate-200 bg-slate-50/40 overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead className="bg-slate-100/60">
-                            <tr>
-                              <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-wider">框号</th>
-                              <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-wider">批次号</th>
-                              <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-wider">表面工艺</th>
-                              <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-wider">颜色</th>
-                              <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-wider">支数</th>
-                              <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-wider">重量</th>
-                              <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-wider">等级</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-200/60">
-                            {order.records.map((p) => {
-                              const g = gradeColor[p.grade];
-                              return (
-                                <tr key={p.id} className="hover:bg-white transition-colors">
-                                  <td className="px-4 py-2.5">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-7 h-7 rounded-md bg-indigo-100 flex items-center justify-center">
-                                        <Barcode className="w-3.5 h-3.5 text-indigo-600" />
-                                      </div>
-                                      <span className="font-mono font-bold text-slate-800 text-xs">{p.frameNo}</span>
+                      <div className="border-t border-slate-200 bg-slate-50/40">
+                        {(() => {
+                          const summaries = computeSummaries(order.records);
+                          return (
+                            <>
+                              <div className="p-4 space-y-3">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                  <div className="bg-white rounded-lg p-3 border border-slate-200 shadow-sm">
+                                    <div className="text-xs font-bold text-slate-600 mb-2 flex items-center gap-1">
+                                      <span className="w-1 h-3 bg-blue-500 rounded" />
+                                      按表面工艺汇总
                                     </div>
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    <span className="font-mono text-[11px] text-slate-600">{p.batchNumber}</span>
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    <span className={cn(
-                                      'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold',
-                                      p.surfaceProcessType === 'oxidation'
-                                        ? 'bg-blue-100 text-blue-700'
-                                        : 'bg-amber-100 text-amber-700'
-                                    )}>
-                                      {p.surfaceProcessType === 'oxidation' ? '氧化' : '喷涂'}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    <span className="text-xs text-slate-700">{p.surfaceColor || '-'}</span>
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    <span className="font-bold tabular-nums text-slate-800 text-xs">{p.pieceCount}</span>
-                                    <span className="text-[10px] text-slate-400 ml-1">支</span>
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    <span className="font-bold tabular-nums text-slate-800 text-xs">{p.totalWeight}</span>
-                                    <span className="text-[10px] text-slate-400 ml-1">kg</span>
-                                  </td>
-                                  <td className="px-4 py-2.5">
-                                    <span className={cn(
-                                      'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold text-white',
-                                      g.bg
-                                    )}>
-                                      <Award className="w-3 h-3" />
-                                      {p.grade}级
-                                    </span>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
+                                    <div className="space-y-1.5">
+                                      {summaries.surface.map((s) => (
+                                        <div key={s.name} className="flex items-center justify-between text-[11px]">
+                                          <span className={cn(
+                                            'px-1.5 py-0.5 rounded font-medium',
+                                            s.name === '阳极氧化' ? 'bg-blue-50 text-blue-700' :
+                                            s.name === '静电喷涂' ? 'bg-amber-50 text-amber-700' :
+                                            'bg-slate-100 text-slate-500'
+                                          )}>{s.name}</span>
+                                          <span className="text-slate-600 tabular-nums">
+                                            <span className="font-bold text-slate-800">{s.pieces}</span>支 · 
+                                            <span className="font-bold text-slate-800 ml-1">{s.weight}</span>kg
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <div className="bg-white rounded-lg p-3 border border-slate-200 shadow-sm">
+                                    <div className="text-xs font-bold text-slate-600 mb-2 flex items-center gap-1">
+                                      <span className="w-1 h-3 bg-purple-500 rounded" />
+                                      按颜色汇总
+                                    </div>
+                                    <div className="space-y-1.5 max-h-24 overflow-y-auto">
+                                      {summaries.color.map((c) => (
+                                        <div key={c.name} className="flex items-center justify-between text-[11px]">
+                                          <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 font-medium">{c.name}</span>
+                                          <span className="text-slate-600 tabular-nums">
+                                            <span className="font-bold text-slate-800">{c.pieces}</span>支 · 
+                                            <span className="font-bold text-slate-800 ml-1">{c.weight}</span>kg
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <div className="bg-white rounded-lg p-3 border border-slate-200 shadow-sm">
+                                    <div className="text-xs font-bold text-slate-600 mb-2 flex items-center gap-1">
+                                      <span className="w-1 h-3 bg-emerald-500 rounded" />
+                                      按型材类型汇总
+                                    </div>
+                                    <div className="space-y-1.5 max-h-24 overflow-y-auto">
+                                      {summaries.profile.map((pr) => (
+                                        <div key={pr.name} className="flex items-center justify-between text-[11px]">
+                                          <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium">{pr.name}</span>
+                                          <span className="text-slate-600 tabular-nums">
+                                            <span className="font-bold text-slate-800">{pr.pieces}</span>支 · 
+                                            <span className="font-bold text-slate-800 ml-1">{pr.weight}</span>kg
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex justify-end">
+                                  <button
+                                    onClick={() => openStatement(order)}
+                                    className="flex items-center gap-1.5 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-sm transition-colors"
+                                  >
+                                    <FileText className="w-4 h-4" />
+                                    生成客户对账单
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="overflow-x-auto border-t border-slate-200">
+                                <table className="w-full text-sm">
+                                  <thead className="bg-slate-100/60">
+                                    <tr>
+                                      <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-wider">框号</th>
+                                      <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-wider">批次号</th>
+                                      <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-wider">表面工艺</th>
+                                      <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-wider">颜色</th>
+                                      <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-wider">支数</th>
+                                      <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-wider">重量</th>
+                                      <th className="text-left px-4 py-2.5 font-semibold text-slate-600 text-[11px] uppercase tracking-wider">等级</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-200/60">
+                                    {order.records.map((p) => {
+                                      const g = gradeColor[p.grade];
+                                      const sl = getSurfaceLabel(p);
+                                      return (
+                                        <tr key={p.id} className="hover:bg-white transition-colors">
+                                          <td className="px-4 py-2.5">
+                                            <div className="flex items-center gap-2">
+                                              <div className="w-7 h-7 rounded-md bg-indigo-100 flex items-center justify-center">
+                                                <Barcode className="w-3.5 h-3.5 text-indigo-600" />
+                                              </div>
+                                              <span className="font-mono font-bold text-slate-800 text-xs">{p.frameNo}</span>
+                                            </div>
+                                          </td>
+                                          <td className="px-4 py-2.5">
+                                            <span className="font-mono text-[11px] text-slate-600">{p.batchNumber}</span>
+                                          </td>
+                                          <td className="px-4 py-2.5">
+                                            <span className={cn(
+                                              'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold',
+                                              sl.className
+                                            )}>
+                                              {sl.text}
+                                            </span>
+                                          </td>
+                                          <td className="px-4 py-2.5">
+                                            <span className="text-xs text-slate-700">{p.surfaceColor || '-'}</span>
+                                          </td>
+                                          <td className="px-4 py-2.5">
+                                            <span className="font-bold tabular-nums text-slate-800 text-xs">{p.pieceCount}</span>
+                                            <span className="text-[10px] text-slate-400 ml-1">支</span>
+                                          </td>
+                                          <td className="px-4 py-2.5">
+                                            <span className="font-bold tabular-nums text-slate-800 text-xs">{p.totalWeight}</span>
+                                            <span className="text-[10px] text-slate-400 ml-1">kg</span>
+                                          </td>
+                                          <td className="px-4 py-2.5">
+                                            <span className={cn(
+                                              'inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold text-white',
+                                              g.bg
+                                            )}>
+                                              <Award className="w-3 h-3" />
+                                              {p.grade}级
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
@@ -468,6 +602,185 @@ export default function Packaging() {
           </div>
         </div>
       </div>
+
+      {showStatementModal && statementOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden animate-in flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50 shrink-0">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-blue-600" />
+                客户对账单预览
+              </h3>
+              <button
+                onClick={() => setShowStatementModal(false)}
+                className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-500"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-6 py-4 overflow-y-auto flex-1 space-y-5">
+              <div className="text-center border-b border-slate-200 pb-4">
+                <h2 className="text-xl font-bold text-slate-800 mb-2">
+                  {statementOrder.customer} - 对账单
+                </h2>
+                <p className="text-sm text-slate-500 font-mono">订单号：{statementOrder.orderNo}</p>
+                <div className="flex items-center justify-center gap-6 mt-3 text-xs text-slate-600">
+                  <span>生成日期：<span className="font-medium text-slate-700">{new Date().toISOString().split('T')[0]}</span></span>
+                  <span>对账人：<span className="font-medium text-slate-700">财务部</span></span>
+                </div>
+              </div>
+
+              {(() => {
+                const summaries = computeSummaries(statementOrder.records);
+                return (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="border border-slate-200 rounded-lg overflow-hidden">
+                        <div className="bg-blue-50 px-3 py-2 border-b border-slate-200">
+                          <span className="text-xs font-bold text-blue-700">按表面工艺汇总</span>
+                        </div>
+                        <table className="w-full text-xs">
+                          <thead className="bg-slate-50">
+                            <tr>
+                              <th className="text-left px-3 py-1.5 font-semibold text-slate-600">工艺</th>
+                              <th className="text-right px-3 py-1.5 font-semibold text-slate-600">支数</th>
+                              <th className="text-right px-3 py-1.5 font-semibold text-slate-600">重量(kg)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {summaries.surface.map((s) => (
+                              <tr key={s.name}>
+                                <td className="px-3 py-1.5 text-slate-700">{s.name}</td>
+                                <td className="px-3 py-1.5 text-right tabular-nums font-medium text-slate-800">{s.pieces}</td>
+                                <td className="px-3 py-1.5 text-right tabular-nums font-medium text-slate-800">{s.weight}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="border border-slate-200 rounded-lg overflow-hidden">
+                        <div className="bg-purple-50 px-3 py-2 border-b border-slate-200">
+                          <span className="text-xs font-bold text-purple-700">按颜色汇总</span>
+                        </div>
+                        <table className="w-full text-xs">
+                          <thead className="bg-slate-50">
+                            <tr>
+                              <th className="text-left px-3 py-1.5 font-semibold text-slate-600">颜色</th>
+                              <th className="text-right px-3 py-1.5 font-semibold text-slate-600">支数</th>
+                              <th className="text-right px-3 py-1.5 font-semibold text-slate-600">重量(kg)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {summaries.color.map((c) => (
+                              <tr key={c.name}>
+                                <td className="px-3 py-1.5 text-slate-700">{c.name}</td>
+                                <td className="px-3 py-1.5 text-right tabular-nums font-medium text-slate-800">{c.pieces}</td>
+                                <td className="px-3 py-1.5 text-right tabular-nums font-medium text-slate-800">{c.weight}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="border border-slate-200 rounded-lg overflow-hidden">
+                        <div className="bg-emerald-50 px-3 py-2 border-b border-slate-200">
+                          <span className="text-xs font-bold text-emerald-700">按型材类型汇总</span>
+                        </div>
+                        <table className="w-full text-xs">
+                          <thead className="bg-slate-50">
+                            <tr>
+                              <th className="text-left px-3 py-1.5 font-semibold text-slate-600">类型</th>
+                              <th className="text-right px-3 py-1.5 font-semibold text-slate-600">支数</th>
+                              <th className="text-right px-3 py-1.5 font-semibold text-slate-600">重量(kg)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {summaries.profile.map((pr) => (
+                              <tr key={pr.name}>
+                                <td className="px-3 py-1.5 text-slate-700">{pr.name}</td>
+                                <td className="px-3 py-1.5 text-right tabular-nums font-medium text-slate-800">{pr.pieces}</td>
+                                <td className="px-3 py-1.5 text-right tabular-nums font-medium text-slate-800">{pr.weight}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="border border-slate-200 rounded-lg overflow-hidden">
+                      <div className="bg-slate-50 px-3 py-2 border-b border-slate-200">
+                        <span className="text-xs font-bold text-slate-700">框明细表</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead className="bg-slate-50/80">
+                            <tr>
+                              <th className="text-left px-3 py-2 font-semibold text-slate-600 whitespace-nowrap">框号</th>
+                              <th className="text-left px-3 py-2 font-semibold text-slate-600 whitespace-nowrap">批次</th>
+                              <th className="text-left px-3 py-2 font-semibold text-slate-600 whitespace-nowrap">表面</th>
+                              <th className="text-left px-3 py-2 font-semibold text-slate-600 whitespace-nowrap">颜色</th>
+                              <th className="text-right px-3 py-2 font-semibold text-slate-600 whitespace-nowrap">定尺</th>
+                              <th className="text-right px-3 py-2 font-semibold text-slate-600 whitespace-nowrap">支数</th>
+                              <th className="text-right px-3 py-2 font-semibold text-slate-600 whitespace-nowrap">重量(kg)</th>
+                              <th className="text-left px-3 py-2 font-semibold text-slate-600 whitespace-nowrap">等级</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {statementOrder.records.map((p) => {
+                              const g = gradeColor[p.grade];
+                              const sl = getSurfaceLabel(p);
+                              return (
+                                <tr key={p.id}>
+                                  <td className="px-3 py-2 font-mono font-medium text-slate-800 whitespace-nowrap">{p.frameNo}</td>
+                                  <td className="px-3 py-2 font-mono text-slate-600 whitespace-nowrap">{p.batchNumber}</td>
+                                  <td className="px-3 py-2 whitespace-nowrap">
+                                    <span className={cn('inline-flex px-1.5 py-0.5 rounded text-[10px] font-bold', sl.className)}>
+                                      {sl.text}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 text-slate-700 whitespace-nowrap">{p.surfaceColor || '-'}</td>
+                                  <td className="px-3 py-2 text-right tabular-nums text-slate-700 whitespace-nowrap">{(p.cutLength / 1000).toFixed(1)}m</td>
+                                  <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-800 whitespace-nowrap">{p.pieceCount}</td>
+                                  <td className="px-3 py-2 text-right tabular-nums font-medium text-slate-800 whitespace-nowrap">{p.totalWeight}</td>
+                                  <td className="px-3 py-2 whitespace-nowrap">
+                                    <span className={cn('inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold text-white', g.bg)}>
+                                      {p.grade}级
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            <tr className="bg-slate-50 font-bold border-t-2 border-slate-200">
+                              <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap" colSpan={5}>合计</td>
+                              <td className="px-3 py-2.5 text-right tabular-nums text-indigo-700 whitespace-nowrap">{statementOrder.frameCount}框 / {statementOrder.totalPieces}支</td>
+                              <td className="px-3 py-2.5 text-right tabular-nums text-indigo-700 whitespace-nowrap">{statementOrder.totalWeight}kg / {(statementOrder.totalWeight / 1000).toFixed(2)}吨</td>
+                              <td className="px-3 py-2.5 whitespace-nowrap">-</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3 bg-slate-50/50 shrink-0">
+              <button
+                onClick={() => setShowStatementModal(false)}
+                className="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+              >
+                关闭
+              </button>
+              <button
+                onClick={() => alert('对账确认功能为提示用，暂不执行实际操作')}
+                className="px-6 py-2.5 text-sm font-semibold text-white bg-slate-500 rounded-lg hover:bg-slate-600 shadow-sm flex items-center gap-2"
+              >
+                <CheckCircle className="w-4 h-4" />
+                对账确认
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">

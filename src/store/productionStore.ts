@@ -14,6 +14,9 @@ import type {
   ProcessStatus,
   RealtimeData,
   TempCurvePoint,
+  BatchTraceCard,
+  ProcessStep,
+  ProcessStepInfo,
 } from '@/data/types';
 import {
   mockCastBillets,
@@ -72,6 +75,8 @@ interface ProductionState {
   updateRealtimeData: () => void;
   manualRefreshRealtime: (batchId: string) => void;
   computeProcessStatus: () => void;
+  getBatchTraceCard: (batchId: string) => BatchTraceCard | null;
+  fillLegacySourceData: () => void;
   resetAllData: () => void;
 }
 
@@ -693,6 +698,226 @@ export const useProductionStore = create<ProductionState>()(
         const state = get();
         const newStatus = computeStatus(state);
         set({ processStatus: newStatus });
+      },
+
+      fillLegacySourceData: () => {
+        set((state) => {
+          const newQuenching = state.quenchingRecords.map((q) => {
+            if (q.profileType && q.outputWeight && q.sourceMachineNo) return q;
+            const batch = state.extrusionBatches.find((b) => b.id === q.batchId);
+            if (!batch) return q;
+            return {
+              ...q,
+              profileType: q.profileType || batch.profileType,
+              outputWeight: q.outputWeight || batch.outputWeight,
+              sourceMachineNo: q.sourceMachineNo || batch.machineNo,
+            };
+          });
+          const newAging = state.agingRecords.map((a) => {
+            if (a.profileType && a.outputWeight) return a;
+            const batch = state.extrusionBatches.find((b) => b.id === a.batchId);
+            const q = a.quenchingRecordId ? state.quenchingRecords.find((x) => x.id === a.quenchingRecordId) : null;
+            return {
+              ...a,
+              profileType: a.profileType || q?.profileType || batch?.profileType,
+              outputWeight: a.outputWeight || q?.outputWeight || batch?.outputWeight,
+            };
+          });
+          const newSurface = state.surfaceRecords.map((s) => {
+            if (s.profileType && s.outputWeight) return s;
+            const batch = state.extrusionBatches.find((b) => b.id === s.batchId);
+            const a = s.agingRecordId ? state.agingRecords.find((x) => x.id === s.agingRecordId) : null;
+            return {
+              ...s,
+              profileType: s.profileType || a?.profileType || batch?.profileType,
+              outputWeight: s.outputWeight || a?.outputWeight || batch?.outputWeight,
+            };
+          });
+          const newPackage = state.packageRecords.map((p) => {
+            if (p.surfaceRecordId && p.surfaceProcessType) return p;
+            const surface = state.surfaceRecords.find((s) => s.batchId === p.batchId);
+            if (!surface) return p;
+            return {
+              ...p,
+              surfaceRecordId: p.surfaceRecordId || surface.id,
+              surfaceProcessType: p.surfaceProcessType || surface.processType,
+              surfaceColor: p.surfaceColor || surface.color,
+            };
+          });
+          return {
+            quenchingRecords: newQuenching,
+            agingRecords: newAging,
+            surfaceRecords: newSurface,
+            packageRecords: newPackage,
+          };
+        });
+        get().computeProcessStatus();
+      },
+
+      getBatchTraceCard: (batchId) => {
+        const state = get();
+        const batch = state.extrusionBatches.find((b) => b.id === batchId);
+        if (!batch) {
+          const q = state.quenchingRecords.find((r) => r.id === batchId);
+          const a = state.agingRecords.find((r) => r.id === batchId);
+          const s = state.surfaceRecords.find((r) => r.id === batchId);
+          const any = q || a || s;
+          if (!any) return null;
+          batchId = any.batchId;
+          return get().getBatchTraceCard(batchId);
+        }
+        const billet = state.castBillets.find((b) => b.id === batch.billetId);
+        const die = state.dies.find((d) => d.id === batch.dieId);
+        const quenching = state.quenchingRecords.find((q) => q.batchId === batch.id);
+        const aging = state.agingRecords.find((a) => a.batchId === batch.id);
+        const surface = state.surfaceRecords.find((s) => s.batchId === batch.id);
+        const packages = state.packageRecords.filter((p) => p.batchId === batch.id);
+
+        let currentStep: ProcessStep = 'extrusion';
+        if (packages.length > 0) currentStep = 'packaging';
+        else if (surface && surface.status === 'completed') currentStep = 'surface';
+        else if (surface && surface.status === 'processing') currentStep = 'surface';
+        else if (aging && aging.status === 'completed') currentStep = 'aging';
+        else if (aging && (aging.status === 'heating' || aging.status === 'holding' || aging.status === 'cooling')) currentStep = 'aging';
+        else if (quenching && quenching.status === 'completed') currentStep = 'quenching';
+        else if (quenching && quenching.status === 'processing') currentStep = 'quenching';
+        else if (batch.status === 'completed') currentStep = 'extrusion';
+        else if (batch.status === 'running') currentStep = 'extrusion';
+
+        const steps: ProcessStepInfo[] = [
+          {
+            step: 'casting', label: '铸棒熔铸',
+            status: billet ? 'completed' : 'pending',
+            time: billet?.castingDate,
+            operator: '熔铸车间',
+            keyParams: billet ? {
+              '重量': `${billet.weight}kg`,
+              'Si': billet.si, 'Fe': billet.fe, 'Cu': billet.cu, 'Mn': billet.mn,
+              'Mg': billet.mg, 'Cr': billet.cr, 'Zn': billet.zn, 'Ti': billet.ti,
+            } : undefined,
+          },
+          {
+            step: 'die', label: '模具上机',
+            status: die ? (die.status === 'onMachine' ? 'processing' : 'completed') : 'pending',
+            keyParams: die ? { '模具号': die.dieNumber, '型号': die.model, '上机次数': die.machineCount } : undefined,
+          },
+          {
+            step: 'extrusion', label: '加热挤压',
+            status: batch.status === 'completed' ? 'completed' : batch.status === 'running' ? 'processing' : 'pending',
+            time: batch.startTime,
+            operator: batch.operator,
+            keyParams: {
+              '机台': batch.machineNo,
+              '产出': `${batch.outputWeight}kg`,
+              '速度': `${batch.extrusionSpeed}m/min`,
+              '出口温度': `${batch.exitTemp}℃`,
+            },
+          },
+          {
+            step: 'quenching', label: '在线淬火',
+            status: !quenching ? 'pending' : (quenching.status === 'completed' ? 'completed' : quenching.status === 'processing' ? 'processing' : 'pending'),
+            time: quenching?.startTime,
+            operator: quenching?.operator,
+            keyParams: quenching ? {
+              '冷却速率': `${quenching.coolingRate}℃/s`,
+              '硬度': `${quenching.hardness}HW`,
+              '风速': `${quenching.airSpeed}m/s`,
+            } : undefined,
+          },
+          {
+            step: 'aging', label: '时效处理',
+            status: !aging ? 'pending' : (aging.status === 'completed' ? 'completed' : (aging.status === 'heating' || aging.status === 'holding' || aging.status === 'cooling') ? 'processing' : 'pending'),
+            time: aging?.startTime,
+            operator: aging?.operator,
+            keyParams: aging ? {
+              '炉号': aging.furnaceNo,
+              '装炉量': `${aging.chargeAmount}t`,
+              '保温温度': `${aging.holdingTemp}℃`,
+              '保温时间': `${aging.holdingTime}min`,
+            } : undefined,
+          },
+          {
+            step: 'surface', label: '表面处理',
+            status: !surface ? 'pending' : (surface.status === 'completed' ? 'completed' : surface.status === 'processing' ? 'processing' : 'pending'),
+            time: surface?.date,
+            operator: surface?.operator,
+            keyParams: surface ? {
+              '工艺': surface.processType === 'oxidation' ? '阳极氧化' : '静电喷涂',
+              '颜色': surface.color,
+              '膜厚': `${surface.filmThickness}${surface.processType === 'oxidation' ? 'μm' : 'μm'}`,
+            } : undefined,
+          },
+          {
+            step: 'packaging', label: '定尺包装',
+            status: packages.length > 0 ? 'completed' : 'pending',
+            operator: packages[0]?.operator,
+            keyParams: packages.length ? {
+              '装框数': packages.length,
+              '总支数': packages.reduce((s, p) => s + p.pieceCount, 0),
+              '总重量': `${packages.reduce((s, p) => s + p.totalWeight, 0)}kg`,
+            } : undefined,
+          },
+        ];
+
+        return {
+          batchId: batch.id,
+          batchNumber: batch.batchNumber,
+          profileType: batch.profileType,
+          currentStep,
+          steps,
+          casting: billet ? {
+            batchNumber: billet.batchNumber,
+            weight: billet.weight,
+            date: billet.castingDate,
+            elements: { Si: billet.si, Fe: billet.fe, Cu: billet.cu, Mn: billet.mn, Mg: billet.mg, Cr: billet.cr, Zn: billet.zn, Ti: billet.ti },
+          } : undefined,
+          die: die ? { dieNumber: die.dieNumber, model: die.model } : undefined,
+          extrusion: {
+            machineNo: batch.machineNo,
+            outputWeight: batch.outputWeight,
+            startTime: batch.startTime,
+            endTime: batch.endTime,
+            operator: batch.operator,
+            speed: batch.extrusionSpeed,
+            temp: batch.exitTemp,
+          },
+          quenching: quenching ? {
+            sourceMachineNo: quenching.sourceMachineNo,
+            outputWeight: quenching.outputWeight,
+            startTime: quenching.startTime,
+            endTime: quenching.endTime,
+            operator: quenching.operator,
+            coolingRate: quenching.coolingRate,
+            hardness: quenching.hardness,
+          } : undefined,
+          aging: aging ? {
+            furnaceNo: aging.furnaceNo,
+            chargeAmount: aging.chargeAmount,
+            startTime: aging.startTime,
+            endTime: aging.endTime,
+            operator: aging.operator,
+            holdingTemp: aging.holdingTemp,
+            holdingTime: aging.holdingTime,
+          } : undefined,
+          surface: surface ? {
+            processType: surface.processType,
+            color: surface.color,
+            date: surface.date,
+            operator: surface.operator,
+            filmThickness: surface.filmThickness,
+          } : undefined,
+          packaging: {
+            frames: packages.map((p) => ({
+              frameNo: p.frameNo,
+              cutLength: p.cutLength,
+              pieceCount: p.pieceCount,
+              totalWeight: p.totalWeight,
+              grade: p.grade,
+              customer: p.customer,
+              orderNo: p.orderNo,
+            })),
+          },
+        };
       },
 
       resetAllData: () => {

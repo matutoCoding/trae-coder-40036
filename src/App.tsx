@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import { Layout } from '@/components/Layout';
 import Dashboard from '@/pages/Dashboard';
 import Casting from '@/pages/Casting';
@@ -8,8 +9,12 @@ import Quenching from '@/pages/Quenching';
 import Aging from '@/pages/Aging';
 import SurfaceTreatment from '@/pages/SurfaceTreatment';
 import Packaging from '@/pages/Packaging';
+import { useProductionStore } from '@/store/productionStore';
 
 export default function App() {
+  const fillLegacySourceData = useProductionStore((s) => s.fillLegacySourceData);
+  useEffect(() => { fillLegacySourceData(); }, [fillLegacySourceData]);
+
   return (
     <Router>
       <Routes>

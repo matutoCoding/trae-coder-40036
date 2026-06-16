@@ -192,6 +192,78 @@ export interface ProcessStatus {
 
 export type ProcessStep = 'casting' | 'die' | 'extrusion' | 'quenching' | 'aging' | 'surface' | 'packaging';
 
+export interface ProcessStepInfo {
+  step: ProcessStep;
+  label: string;
+  status: 'pending' | 'processing' | 'completed';
+  time?: string;
+  operator?: string;
+  keyParams?: Record<string, string | number>;
+}
+
+export interface BatchTraceCard {
+  batchId: string;
+  batchNumber: string;
+  profileType: string;
+  currentStep: ProcessStep;
+  steps: ProcessStepInfo[];
+  casting?: {
+    batchNumber: string;
+    weight?: number;
+    date?: string;
+    elements?: Record<string, number>;
+  };
+  die?: {
+    dieNumber: string;
+    model: string;
+  };
+  extrusion?: {
+    machineNo?: string;
+    outputWeight?: number;
+    startTime?: string;
+    endTime?: string;
+    operator?: string;
+    speed?: number;
+    temp?: number;
+  };
+  quenching?: {
+    sourceMachineNo?: string;
+    outputWeight?: number;
+    startTime?: string;
+    endTime?: string;
+    operator?: string;
+    coolingRate?: number;
+    hardness?: number;
+  };
+  aging?: {
+    furnaceNo?: string;
+    chargeAmount?: number;
+    startTime?: string;
+    endTime?: string;
+    operator?: string;
+    holdingTemp?: number;
+    holdingTime?: number;
+  };
+  surface?: {
+    processType?: 'oxidation' | 'spraying';
+    color?: string;
+    date?: string;
+    operator?: string;
+    filmThickness?: number;
+  };
+  packaging?: {
+    frames: Array<{
+      frameNo: string;
+      cutLength?: number;
+      pieceCount?: number;
+      totalWeight?: number;
+      grade?: string;
+      customer?: string;
+      orderNo?: string;
+    }>;
+  };
+}
+
 export interface RealtimeData {
   timestamp: string;
   extrusionSpeed: number;

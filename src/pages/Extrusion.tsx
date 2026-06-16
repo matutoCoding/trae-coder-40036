@@ -4,6 +4,7 @@ import { Gauge, Play, Check, Clock, Thermometer, Ruler, ArrowLeftRight, Plus, Re
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import { cn } from '@/lib/utils';
 import type { CastBillet, Die } from '@/data/types';
+import { BatchTraceModal } from '@/components/BatchTraceModal';
 
 const batchStatusMap: Record<string, { label: string; className: string; icon: typeof Play }> = {
   running: { label: '生产中', icon: Play, className: 'bg-blue-100 text-blue-700 border-blue-200' },
@@ -42,6 +43,8 @@ export default function Extrusion() {
   const [selectedBilletId, setSelectedBilletId] = useState<string | null>(null);
   const [selectedDieId, setSelectedDieId] = useState<string | null>(null);
   const [machineNo, setMachineNo] = useState('挤压机01');
+  const [showTrace, setShowTrace] = useState(false);
+  const [traceBatchId, setTraceBatchId] = useState<string | null>(null);
 
   const availableBillets = useMemo(() => {
     const usedBilletIds = batches.map(b => b.billetId);
@@ -144,9 +147,11 @@ export default function Extrusion() {
                 </div>
                 <div className="text-left">
                   <div className={cn(
-                    'font-mono font-bold text-sm',
+                    'font-mono font-bold text-sm cursor-pointer hover:underline underline-offset-2 decoration-blue-400',
                     active ? 'text-slate-800' : 'text-slate-600'
-                  )}>
+                  )}
+                    onClick={(e) => { e.stopPropagation(); setTraceBatchId(b.id); setShowTrace(true); }}
+                  >
                     {b.batchNumber}
                   </div>
                   <div className="text-xs text-slate-500">{b.profileType}</div>
@@ -184,7 +189,7 @@ export default function Extrusion() {
                   <span className="w-1 h-5 bg-red-500 rounded-full" />
                   铸棒加热温度监控
                 </h3>
-                <p className="text-xs text-slate-500 mt-1">批次号: {selected.batchNumber} | 机台: {selected.machineNo}</p>
+                <p className="text-xs text-slate-500 mt-1">批次号: <span className="font-mono font-semibold cursor-pointer hover:underline underline-offset-2 decoration-blue-400" onClick={() => { setTraceBatchId(selected.id); setShowTrace(true); }}>{selected.batchNumber}</span> | 机台: {selected.machineNo}</p>
               </div>
               <button
                 onClick={() => {
@@ -565,7 +570,7 @@ export default function Extrusion() {
               <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-100">
                 <div className="text-sm mb-2">
                   <span className="text-slate-500">批次号：</span>
-                  <span className="font-mono font-bold text-slate-800">{selected.batchNumber}</span>
+                  <span className="font-mono font-bold text-slate-800 cursor-pointer hover:underline underline-offset-2 decoration-blue-400" onClick={() => { setTraceBatchId(selected.id); setShowTrace(true); }}>{selected.batchNumber}</span>
                 </div>
                 <div className="text-sm mb-2">
                   <span className="text-slate-500">型材类型：</span>
@@ -618,6 +623,10 @@ export default function Extrusion() {
             </div>
           </div>
         </div>
+      )}
+
+      {showTrace && traceBatchId && (
+        <BatchTraceModal batchId={traceBatchId} onClose={() => { setShowTrace(false); setTraceBatchId(null); }} />
       )}
     </div>
   );

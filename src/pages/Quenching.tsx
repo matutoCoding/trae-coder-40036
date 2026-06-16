@@ -3,6 +3,7 @@ import { useProductionStore } from '@/store/productionStore';
 import { Wind, Thermometer, Gauge, Activity, Snowflake, ChevronDown, Play, CheckCircle, Clock, Package, Factory, User, X } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar, Legend } from 'recharts';
 import { cn } from '@/lib/utils';
+import { BatchTraceModal } from '@/components/BatchTraceModal';
 
 const statusMap: Record<string, { label: string; color: string; bg: string; icon: typeof Clock }> = {
   pending: { label: '待处理', color: 'text-amber-600', bg: 'bg-amber-100', icon: Clock },
@@ -20,6 +21,8 @@ export default function Quenching() {
   const [showStartModal, setShowStartModal] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [startOperator, setStartOperator] = useState('李工');
+  const [showTrace, setShowTrace] = useState(false);
+  const [traceBatchId, setTraceBatchId] = useState<string | null>(null);
 
   const list = useMemo(() => records.filter((r) => r.status === tab), [records, tab]);
   const selected = records.find((r) => r.id === selectedId);
@@ -106,7 +109,7 @@ export default function Quenching() {
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-slate-800">{r.batchNumber}</span>
+                          <span className="font-mono font-bold text-slate-800 cursor-pointer hover:underline underline-offset-2 decoration-blue-400" onClick={(e) => { e.stopPropagation(); setTraceBatchId(r.batchId); setShowTrace(true); }}>{r.batchNumber}</span>
                           <span className={cn('px-2 py-0.5 rounded-md text-[10px] font-semibold', s.bg, s.color)}>
                             {s.label}
                           </span>
@@ -172,7 +175,7 @@ export default function Quenching() {
             <div className="px-5 py-4 border-b border-slate-100">
               <h3 className="font-bold text-slate-800 flex items-center gap-2">
                 <div className={cn('w-2.5 h-6 rounded-full', statusMap[selected.status].bg.replace('bg-', 'bg-').replace('-100', '-500'))} />
-                批次详情 - {selected.batchNumber}
+                批次详情 - <span className="font-mono cursor-pointer hover:underline underline-offset-2 decoration-blue-400" onClick={() => { setTraceBatchId(selected.batchId); setShowTrace(true); }}>{selected.batchNumber}</span>
               </h3>
             </div>
             <div className="p-5 bg-gradient-to-br from-cyan-50/70 via-blue-50/30 to-indigo-50/50">
@@ -291,7 +294,7 @@ export default function Quenching() {
               <div className="p-4 rounded-xl bg-blue-50/50 border border-blue-100">
                 <div className="text-sm mb-1.5">
                   <span className="text-slate-500">批次号：</span>
-                  <span className="font-mono font-bold text-slate-800">{selected.batchNumber}</span>
+                  <span className="font-mono font-bold text-slate-800 cursor-pointer hover:underline underline-offset-2 decoration-blue-400" onClick={() => { setTraceBatchId(selected.batchId); setShowTrace(true); }}>{selected.batchNumber}</span>
                 </div>
                 <div className="text-sm mb-1.5">
                   <span className="text-slate-500">型材：</span>
@@ -352,7 +355,7 @@ export default function Quenching() {
               <div className="p-4 rounded-xl bg-emerald-50/50 border border-emerald-100">
                 <div className="text-sm mb-1.5">
                   <span className="text-slate-500">批次号：</span>
-                  <span className="font-mono font-bold text-slate-800">{selected.batchNumber}</span>
+                  <span className="font-mono font-bold text-slate-800 cursor-pointer hover:underline underline-offset-2 decoration-blue-400" onClick={() => { setTraceBatchId(selected.batchId); setShowTrace(true); }}>{selected.batchNumber}</span>
                 </div>
                 <div className="text-sm">
                   <span className="text-slate-500">提示：</span>
@@ -416,6 +419,10 @@ export default function Quenching() {
             </div>
           </div>
         </div>
+      )}
+
+      {showTrace && traceBatchId && (
+        <BatchTraceModal batchId={traceBatchId} onClose={() => { setShowTrace(false); setTraceBatchId(null); }} />
       )}
     </div>
   );
