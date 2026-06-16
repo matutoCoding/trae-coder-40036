@@ -1,15 +1,34 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useProductionStore } from '@/store/productionStore';
 import { Sparkles, Droplets, Brush, CheckCircle, AlertTriangle, ChevronDown, Layers, Zap, Clock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
 
 export default function SurfaceTreatment() {
   const records = useProductionStore((s) => s.surfaceRecords);
-  const [selectedId, setSelectedId] = useState(records[0]?.id || '');
   const [processTab, setProcessTab] = useState<'oxidation' | 'spraying'>('oxidation');
+  const [selectedOxidationId, setSelectedOxidationId] = useState<string | null>(null);
+  const [selectedSprayingId, setSelectedSprayingId] = useState<string | null>(null);
 
-  const filtered = records.filter((r) => r.processType === processTab);
-  const selected = records.find((r) => r.id === selectedId) || filtered[0];
+  const oxidationRecords = useMemo(() => records.filter((r) => r.processType === 'oxidation'), [records]);
+  const sprayingRecords = useMemo(() => records.filter((r) => r.processType === 'spraying'), [records]);
+  const filtered = processTab === 'oxidation' ? oxidationRecords : sprayingRecords;
+  const currentSelectedId = processTab === 'oxidation' ? selectedOxidationId : selectedSprayingId;
+  const setCurrentSelectedId = processTab === 'oxidation' ? setSelectedOxidationId : setSelectedSprayingId;
+
+  useEffect(() => {
+    if (processTab === 'oxidation' && !selectedOxidationId && oxidationRecords.length > 0) {
+      setSelectedOxidationId(oxidationRecords[0].id);
+    }
+    if (processTab === 'spraying' && !selectedSprayingId && sprayingRecords.length > 0) {
+      setSelectedSprayingId(sprayingRecords[0].id);
+    }
+  }, [processTab, oxidationRecords, sprayingRecords, selectedOxidationId, selectedSprayingId]);
+
+  const selected = filtered.find((r) => r.id === currentSelectedId) || filtered[0];
+
+  const handleTabChange = (tab: 'oxidation' | 'spraying') => {
+    setProcessTab(tab);
+  };
 
   const oxidationParams = [
     { name: '参数', '01批': 18.5, '02批': 20, '03批': 19.2, standard: 14, unit: '槽液温度℃' },
@@ -38,14 +57,14 @@ export default function SurfaceTreatment() {
     <div className="space-y-6">
       <div className="flex items-center gap-2 bg-white rounded-lg p-1 shadow-sm border border-slate-200/60 w-fit">
         <button
-          onClick={() => setProcessTab('oxidation')}
+          onClick={() => handleTabChange('oxidation')}
           className={`px-5 py-2 rounded-md text-sm font-semibold transition-all flex items-center gap-2 ${processTab === 'oxidation' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}
         >
           <Droplets className="w-4 h-4" />
           阳极氧化
         </button>
         <button
-          onClick={() => setProcessTab('spraying')}
+          onClick={() => handleTabChange('spraying')}
           className={`px-5 py-2 rounded-md text-sm font-semibold transition-all flex items-center gap-2 ${processTab === 'spraying' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}
         >
           <Brush className="w-4 h-4" />
@@ -84,7 +103,7 @@ export default function SurfaceTreatment() {
             <div className="relative">
               <select
                 value={selected?.id || ''}
-                onChange={(e) => setSelectedId(e.target.value)}
+                onChange={(e) => setCurrentSelectedId(e.target.value)}
                 className="appearance-none pl-3 pr-9 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg font-semibold text-slate-700"
               >
                 {filtered.map((r) => (

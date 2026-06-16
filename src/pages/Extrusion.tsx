@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useProductionStore } from '@/store/productionStore';
-import { Gauge, Play, Check, Clock, Thermometer, Ruler, ArrowLeftRight, Plus, RefreshCw } from 'lucide-react';
+import { Gauge, Play, Check, Clock, Thermometer, Ruler, ArrowLeftRight, Plus, RefreshCw, X, CheckCircle2, AlertCircle } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import { cn } from '@/lib/utils';
+import type { CastBillet, Die } from '@/data/types';
 
 const batchStatusMap: Record<string, { label: string; className: string; icon: typeof Play }> = {
   running: { label: '生产中', icon: Play, className: 'bg-blue-100 text-blue-700 border-blue-200' },
@@ -24,10 +25,46 @@ const generateSpeedData = () => {
 
 export default function Extrusion() {
   const batches = useProductionStore((s) => s.extrusionBatches);
+  const castBillets = useProductionStore((s) => s.castBillets);
+  const dies = useProductionStore((s) => s.dies);
+  const dieUsageRecords = useProductionStore((s) => s.dieUsageRecords);
+  const realtimeData = useProductionStore((s) => s.realtimeData);
+  const addExtrusionBatch = useProductionStore((s) => s.addExtrusionBatch);
+  const manualRefreshRealtime = useProductionStore((s) => s.manualRefreshRealtime);
+  const updateExtrusionBatch = useProductionStore((s) => s.updateExtrusionBatch);
+
   const [selectedBatchId, setSelectedBatchId] = useState(batches.find(b => b.status === 'running')?.id || batches[0]?.id);
-  const [speedData] = useState(generateSpeedData());
+  const [speedData, setSpeedData] = useState(generateSpeedData());
+  const [showNewBatch, setShowNewBatch] = useState(false);
+  const [selectedBilletId, setSelectedBilletId] = useState<string | null>(null);
+  const [selectedDieId, setSelectedDieId] = useState<string | null>(null);
+  const [machineNo, setMachineNo] = useState('挤压机01');
+
+  const availableBillets = useMemo(() => {
+    const usedBilletIds = batches.map(b => b.billetId);
+    return castBillets.filter(b => !usedBilletIds.includes(b.id) && b.status === 'qualified');
+  }, [castBillets, batches]);
+
+  const availableDies = useMemo(() => {
+    const activeRecordDieIds = dieUsageRecords.filter(r => !r.downTime).map(r => r.dieId);
+    return dies.filter(d => d.status === 'onMachine' || activeRecordDieIds.includes(d.id));
+  }, [dies, dieUsageRecords]);
 
   const selected = batches.find((b) => b.id === selectedBatchId);
+  const selectedBillet = castBillets.find(b => b.id === selected?.billetId);
+  const selectedDie = dies.find(d => d.id === selected?.dieId);
+
+  const refreshSpeedData = () => {
+    const newData = speedData.slice(1);
+    const lastT = speedData[speedData.length - 1].t;
+    const nextMin = (parseInt(lastT.split(':')[0]) * 60 + parseInt(lastT.split(':')[1]) + 3) % (24 * 60);
+    newData.push({
+      t: `${String(Math.floor(nextMin / 60)).padStart(2, '0')}:${String(nextMin % 60).padStart(2, '0')}`,
+      speed: 12 + Math.random() * 5,
+      temp: 510 + Math.random() * 20,
+    });
+    setSpeedData(newData);
+  };
 
   const GaugeMeter = ({ value, min, max, label, unit, optimal }: { value: number; min: number; max: number; label: string; unit: string; optimal: [number, number] }) => {
     const percent = ((value - min) / (max - min)) * 100;
@@ -121,7 +158,14 @@ export default function Extrusion() {
               </button>
             );
           })}
-          <button className="flex items-center gap-1.5 px-4 py-3 rounded-xl border-2 border-dashed border-slate-200 text-slate-500 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50/30 transition-all shrink-0">
+          <button
+            onClick={() => {
+              setSelectedBilletId(null);
+              setSelectedDieId(null);
+              setShowNewBatch(true);
+            }}
+            className="flex items-center gap-1.5 px-4 py-3 rounded-xl border-2 border-dashed border-slate-200 text-slate-500 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50/30 transition-all shrink-0"
+          >
             <Plus className="w-4 h-4" />
             <span className="text-sm font-semibold">新建批次</span>
           </button>
@@ -139,7 +183,22 @@ export default function Extrusion() {
                 </h3>
                 <p className="text-xs text-slate-500 mt-1">批次号: {selected.batchNumber} | 机台: {selected.machineNo}</p>
               </div>
-              <button className="flex items-center gap-1.5 px-3 py-2 text-sm bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200">
+              <button
+                onClick={() => {
+                  if (selectedBatchId) manualRefreshRealtime(selectedBatchId);
+                  refreshSpeedData();
+                  if (selected && selected.status === 'running') {
+                    updateExtrusionBatch(selected.id, {
+                      heatTempTop: Math.round(485 + (Math.random() - 0.5) * 15),
+                      heatTempMid: Math.round(495 + (Math.random() - 0.5) * 15),
+                      heatTempBottom: Math.round(480 + (Math.random() - 0.5) * 15),
+                      exitTemp: Math.round(520 + (Math.random() - 0.5) * 20),
+                      extrusionSpeed: Math.round((14 + (Math.random() - 0.5) * 4) * 10) / 10,
+                    });
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 text-sm bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 active:scale-95 transition-all"
+              >
                 <RefreshCw className="w-4 h-4" />
                 刷新
               </button>
@@ -269,6 +328,198 @@ export default function Extrusion() {
             </div>
           </div>
         </>
+      )}
+
+      {/* 新建挤压批次模态框 */}
+      {showNewBatch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Plus className="w-5 h-5 text-blue-600" />
+                新建挤压批次
+              </h3>
+              <button onClick={() => setShowNewBatch(false)} className="w-8 h-8 rounded-lg hover:bg-white/60 flex items-center justify-center text-slate-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-6 overflow-y-auto flex-1">
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-2">选择上机机台</label>
+                <select
+                  value={machineNo}
+                  onChange={(e) => setMachineNo(e.target.value)}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/30"
+                >
+                  <option value="挤压机01">挤压机01</option>
+                  <option value="挤压机02">挤压机02</option>
+                  <option value="挤压机03">挤压机03</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-2 flex items-center gap-2">
+                  <span>选择待处理合格铸棒</span>
+                  <span className="px-2 py-0.5 bg-blue-100 text-blue-600 rounded text-[10px] font-bold">
+                    可选 {availableBillets.length} 根
+                  </span>
+                </label>
+                {availableBillets.length === 0 ? (
+                  <div className="p-6 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center">
+                    <AlertCircle className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                    <div className="text-sm text-slate-500">暂无待处理的合格铸棒</div>
+                    <div className="text-xs text-slate-400 mt-1">请先在铸棒熔铸模块录入新的铸棒批次</div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-56 overflow-y-auto p-1">
+                    {availableBillets.map((billet) => {
+                      const selected = selectedBilletId === billet.id;
+                      return (
+                        <div
+                          key={billet.id}
+                          onClick={() => setSelectedBilletId(billet.id)}
+                          className={cn(
+                            'p-3 rounded-xl border-2 cursor-pointer transition-all',
+                            selected
+                              ? 'border-blue-500 bg-blue-50/50'
+                              : 'border-slate-100 hover:border-slate-200 bg-white'
+                          )}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-mono font-bold text-slate-800">{billet.batchNumber}</span>
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-600 border border-emerald-200">
+                              合格
+                            </span>
+                          </div>
+                          <div className="text-xs text-slate-600 space-y-1">
+                            <div>重量：<span className="font-medium">{billet.weight} kg</span></div>
+                            <div>均质温度：<span className="font-medium">{billet.homogenizationTemp}℃</span></div>
+                            <div>日期：<span className="font-medium">{billet.castingDate}</span></div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-2 flex items-center gap-2">
+                  <span>选择上机中的模具</span>
+                  <span className="px-2 py-0.5 bg-orange-100 text-orange-600 rounded text-[10px] font-bold">
+                    可用 {availableDies.length} 套
+                  </span>
+                </label>
+                {availableDies.length === 0 ? (
+                  <div className="p-6 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center">
+                    <AlertCircle className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                    <div className="text-sm text-slate-500">暂无上机中的模具</div>
+                    <div className="text-xs text-slate-400 mt-1">请先在模具管理模块执行"模具上机"</div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-56 overflow-y-auto p-1">
+                    {availableDies.map((die) => {
+                      const selected = selectedDieId === die.id;
+                      return (
+                        <div
+                          key={die.id}
+                          onClick={() => setSelectedDieId(die.id)}
+                          className={cn(
+                            'p-3 rounded-xl border-2 cursor-pointer transition-all',
+                            selected
+                              ? 'border-orange-500 bg-orange-50/50'
+                              : 'border-slate-100 hover:border-slate-200 bg-white'
+                          )}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-mono font-bold text-slate-800">{die.dieNumber}</span>
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-100 text-blue-600 border border-blue-200">
+                              上机中
+                            </span>
+                          </div>
+                          <div className="text-xs text-slate-600 space-y-1">
+                            <div>型号：<span className="font-medium">{die.model}</span></div>
+                            <div>规格：<span className="font-medium">{die.specification}</span></div>
+                            <div>寿命：<span className="font-medium">{die.machineCount}/{die.maxMachineCount} 次</span></div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="text-xs text-slate-500">
+                {selectedBilletId && selectedDieId ? (
+                  <span className="text-emerald-600 font-semibold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4" />
+                    已选择铸棒和模具，可以开批
+                  </span>
+                ) : (
+                  <span className="text-amber-600 font-medium">请选择铸棒和模具</span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowNewBatch(false)}
+                  className="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+                >
+                  取消
+                </button>
+                <button
+                  disabled={!selectedBilletId || !selectedDieId}
+                  onClick={() => {
+                    const billet = availableBillets.find(b => b.id === selectedBilletId)!;
+                    const die = availableDies.find(d => d.id === selectedDieId)!;
+                    const today = new Date();
+                    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+                    const seq = String(batches.filter(b => b.batchNumber.startsWith(`JY${dateStr}`)).length + 1).padStart(3, '0');
+                    const batchNumber = `JY${dateStr}${seq}`;
+
+                    addExtrusionBatch({
+                      batchNumber,
+                      billetId: billet.id,
+                      billetBatchNumber: billet.batchNumber,
+                      dieId: die.id,
+                      dieNumber: die.dieNumber,
+                      machineNo,
+                      profileType: die.specification,
+                      startTime: today.toISOString().slice(0, 16).replace('T', ' '),
+                      status: 'running',
+                      heatTempTop: 485,
+                      heatTempMid: 495,
+                      heatTempBottom: 480,
+                      exitTemp: 520,
+                      extrusionSpeed: 14.5,
+                      cylinderPressure: 21,
+                      outputWeight: 0,
+                      straightnessBefore: 2.5,
+                      straightnessAfter: 0.8,
+                      operator: '自动开批',
+                      stretchRate: 1.2,
+                    });
+                    setShowNewBatch(false);
+                    setSelectedBatchId(undefined as any);
+                    setTimeout(() => {
+                      const newBatch = batches[batches.length - 1];
+                      if (newBatch) setSelectedBatchId(newBatch.id);
+                    }, 50);
+                  }}
+                  className={cn(
+                    'px-6 py-2.5 text-sm font-semibold text-white rounded-lg shadow-md flex items-center gap-2',
+                    selectedBilletId && selectedDieId
+                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/25'
+                      : 'bg-slate-300 cursor-not-allowed'
+                  )}
+                >
+                  <Play className="w-4 h-4" />
+                  开始挤压
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

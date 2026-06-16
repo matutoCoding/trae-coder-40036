@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useProductionStore } from '@/store/productionStore';
-import { Wrench, Plus, Search, Filter, Info, Cog, AlertTriangle, CheckCircle2, XCircle, TrendingUp, Clock } from 'lucide-react';
+import { Wrench, Plus, Search, Filter, Info, Cog, AlertTriangle, CheckCircle2, XCircle, TrendingUp, Clock, X, Play, Square, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { Die, DieUsageRecord } from '@/data/types';
 
 const dieStatusConfig: Record<string, { label: string; color: string; bg: string; border: string }> = {
   available: { label: '待用', color: 'text-emerald-600', bg: 'bg-emerald-500', border: 'border-emerald-200' },
@@ -13,9 +14,33 @@ const dieStatusConfig: Record<string, { label: string; color: string; bg: string
 export default function DieManagement() {
   const dies = useProductionStore((s) => s.dies);
   const dieUsageRecords = useProductionStore((s) => s.dieUsageRecords);
+  const addDie = useProductionStore((s) => s.addDie);
+  const mountDieToMachine = useProductionStore((s) => s.mountDieToMachine);
+  const unmountDieFromMachine = useProductionStore((s) => s.unmountDieFromMachine);
+  const addDieRepairRecord = useProductionStore((s) => s.addDieRepairRecord);
+  const updateDie = useProductionStore((s) => s.updateDie);
+
   const [filter, setFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [selectedDie, setSelectedDie] = useState<string | null>(dies[0]?.id || null);
+  
+  const [showAddDie, setShowAddDie] = useState(false);
+  const [showMountModal, setShowMountModal] = useState(false);
+  const [showUnmountModal, setShowUnmountModal] = useState(false);
+  const [showRepairModal, setShowRepairModal] = useState(false);
+
+  const [newDieForm, setNewDieForm] = useState({
+    dieNumber: '', model: '', specification: '', drawing: '', maxMachineCount: 300,
+  });
+  const [mountForm, setMountForm] = useState({ machineNo: '挤压机01', operator: '张师傅' });
+  const [unmountForm, setUnmountForm] = useState({ extrusionWeight: 1.5, wearCondition: '正常' });
+  const [repairNote, setRepairNote] = useState('');
+
+  useEffect(() => {
+    if (!dies.find(d => d.id === selectedDie)) {
+      setSelectedDie(dies[0]?.id || null);
+    }
+  }, [dies, selectedDie]);
 
   const filtered = dies.filter((d) => {
     const matchFilter = filter === 'all' || d.status === filter;
@@ -25,7 +50,8 @@ export default function DieManagement() {
   });
 
   const selected = dies.find((d) => d.id === selectedDie);
-  const dieRecords = dieUsageRecords.filter((r) => r.dieId === selectedDie);
+  const dieRecords = dieUsageRecords.filter((r) => r.dieId === selectedDie).sort((a, b) => new Date(b.upTime).getTime() - new Date(a.upTime).getTime());
+  const activeUsageRecord = dieRecords.find(r => !r.downTime);
 
   const stats = {
     total: dies.length,
@@ -33,6 +59,9 @@ export default function DieManagement() {
     onMachine: dies.filter(d => d.status === 'onMachine').length,
     repair: dies.filter(d => d.status === 'repair').length,
   };
+
+  const formatDateTime = (d: Date) => d.toISOString().slice(0, 16).replace('T', ' ');
+  const formatDate = (d: Date) => d.toISOString().slice(0, 10);
 
   return (
     <div className="space-y-6">
@@ -92,7 +121,20 @@ export default function DieManagement() {
               className="pl-9 pr-3 py-2 text-sm bg-white border border-slate-200 rounded-lg w-52 focus:ring-2 focus:ring-blue-500/30"
             />
           </div>
-          <button className="flex items-center gap-1.5 px-4 py-2 text-sm bg-slate-800 text-white rounded-lg hover:bg-slate-900 shadow-sm">
+          <button 
+            onClick={() => {
+              const nextNum = String(dies.length + 1).padStart(4, '0');
+              setNewDieForm({
+                dieNumber: `MJ-${nextNum}`,
+                model: '6063-',
+                specification: '',
+                drawing: `DWG-2026-${String(dies.length + 1).padStart(4, '0')}`,
+                maxMachineCount: 300,
+              });
+              setShowAddDie(true);
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-slate-800 text-white rounded-lg hover:bg-slate-900 shadow-sm"
+          >
             <Plus className="w-4 h-4" />
             新增模具
           </button>
@@ -256,13 +298,48 @@ export default function DieManagement() {
                     </div>
                   </div>
 
-                  <div className="mt-5 grid grid-cols-2 gap-2">
-                    <button className="px-3 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">
-                      模具上机
-                    </button>
-                    <button className="px-3 py-2.5 text-sm font-semibold text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
-                      维修记录
-                    </button>
+                  <div className="mt-5 space-y-2">
+                    {selected.status === 'available' && (
+                      <button
+                        onClick={() => setShowMountModal(true)}
+                        className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Play className="w-4 h-4" />
+                        模具上机
+                      </button>
+                    )}
+                    {selected.status === 'onMachine' && activeUsageRecord && (
+                      <button
+                        onClick={() => setShowUnmountModal(true)}
+                        className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-orange-600 rounded-lg hover:bg-orange-700 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Square className="w-4 h-4" />
+                        模具下机
+                      </button>
+                    )}
+                    {(selected.status === 'available' || selected.status === 'onMachine') && (
+                      <button
+                        onClick={() => {
+                          setRepairNote('');
+                          setShowRepairModal(true);
+                        }}
+                        className="w-full px-4 py-2.5 text-sm font-semibold text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Settings className="w-4 h-4" />
+                        送修保养
+                      </button>
+                    )}
+                    {selected.status === 'repair' && (
+                      <button
+                        onClick={() => {
+                          updateDie(selected.id, { status: 'available', lastMaintenance: formatDate(new Date()) });
+                        }}
+                        className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        维修完成
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -299,6 +376,324 @@ export default function DieManagement() {
           })()}
         </div>
       </div>
+
+      {/* 新增模具模态框 */}
+      {showAddDie && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-50 to-gray-50">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Plus className="w-5 h-5 text-slate-600" />
+                新增模具
+              </h3>
+              <button onClick={() => setShowAddDie(false)} className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 block mb-1.5">模具编号</label>
+                  <input
+                    type="text"
+                    value={newDieForm.dieNumber}
+                    onChange={(e) => setNewDieForm({ ...newDieForm, dieNumber: e.target.value })}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500/30"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 block mb-1.5">合金牌号</label>
+                  <input
+                    type="text"
+                    value={newDieForm.model}
+                    onChange={(e) => setNewDieForm({ ...newDieForm, model: e.target.value })}
+                    placeholder="如 6063-08"
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500/30"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1.5">型材规格</label>
+                <input
+                  type="text"
+                  value={newDieForm.specification}
+                  onChange={(e) => setNewDieForm({ ...newDieForm, specification: e.target.value })}
+                  placeholder="如 80系列平开门框型材"
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/30"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 block mb-1.5">图纸编号</label>
+                  <input
+                    type="text"
+                    value={newDieForm.drawing}
+                    onChange={(e) => setNewDieForm({ ...newDieForm, drawing: e.target.value })}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500/30"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-600 block mb-1.5">设计寿命(次)</label>
+                  <input
+                    type="number"
+                    value={newDieForm.maxMachineCount}
+                    onChange={(e) => setNewDieForm({ ...newDieForm, maxMachineCount: parseInt(e.target.value) })}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm font-mono tabular-nums focus:ring-2 focus:ring-blue-500/30"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3 bg-slate-50/50">
+              <button
+                onClick={() => setShowAddDie(false)}
+                className="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  if (!newDieForm.specification.trim()) {
+                    alert('请输入型材规格');
+                    return;
+                  }
+                  addDie({
+                    dieNumber: newDieForm.dieNumber,
+                    model: newDieForm.model,
+                    specification: newDieForm.specification,
+                    drawing: newDieForm.drawing,
+                    machineCount: 0,
+                    totalWeight: 0,
+                    status: 'available',
+                    lastMaintenance: formatDate(new Date()),
+                    maxMachineCount: newDieForm.maxMachineCount,
+                  });
+                  setShowAddDie(false);
+                }}
+                className="px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-slate-700 to-slate-800 rounded-lg hover:from-slate-800 hover:to-slate-900 shadow-md flex items-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                确认新增
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 模具上机模态框 */}
+      {showMountModal && selected && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Play className="w-5 h-5 text-blue-600" />
+                模具上机登记
+              </h3>
+              <button onClick={() => setShowMountModal(false)} className="w-8 h-8 rounded-lg hover:bg-white/60 flex items-center justify-center text-slate-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="p-4 rounded-xl bg-blue-50/50 border border-blue-100">
+                <div className="text-sm">
+                  <span className="text-slate-500">模具编号：</span>
+                  <span className="font-mono font-bold text-slate-800">{selected.dieNumber}</span>
+                </div>
+                <div className="text-sm mt-1">
+                  <span className="text-slate-500">规格：</span>
+                  <span className="font-medium text-slate-700">{selected.specification}</span>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1.5">上机机台</label>
+                <select
+                  value={mountForm.machineNo}
+                  onChange={(e) => setMountForm({ ...mountForm, machineNo: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/30"
+                >
+                  <option value="挤压机01">挤压机01</option>
+                  <option value="挤压机02">挤压机02</option>
+                  <option value="挤压机03">挤压机03</option>
+                  <option value="挤压机04">挤压机04</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1.5">操作人员</label>
+                <select
+                  value={mountForm.operator}
+                  onChange={(e) => setMountForm({ ...mountForm, operator: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/30"
+                >
+                  <option value="张师傅">张师傅</option>
+                  <option value="李师傅">李师傅</option>
+                  <option value="王师傅">王师傅</option>
+                  <option value="赵师傅">赵师傅</option>
+                </select>
+              </div>
+              <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded-lg">
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5" />
+                  上机时间：{formatDateTime(new Date())}
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3 bg-slate-50/50">
+              <button
+                onClick={() => setShowMountModal(false)}
+                className="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  mountDieToMachine(selected.id, mountForm.machineNo, mountForm.operator);
+                  setShowMountModal(false);
+                }}
+                className="px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg hover:from-blue-700 hover:to-indigo-700 shadow-md shadow-blue-500/25 flex items-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                确认上机
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 模具下机模态框 */}
+      {showUnmountModal && selected && activeUsageRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-orange-50 to-amber-50">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Square className="w-5 h-5 text-orange-600" />
+                模具下机登记
+              </h3>
+              <button onClick={() => setShowUnmountModal(false)} className="w-8 h-8 rounded-lg hover:bg-white/60 flex items-center justify-center text-slate-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="p-4 rounded-xl bg-orange-50/50 border border-orange-100">
+                <div className="text-sm">
+                  <span className="text-slate-500">模具：</span>
+                  <span className="font-mono font-bold text-slate-800">{selected.dieNumber}</span>
+                </div>
+                <div className="text-sm mt-1">
+                  <span className="text-slate-500">机台：</span>
+                  <span className="font-medium text-slate-700">{activeUsageRecord.machineNo}</span>
+                </div>
+                <div className="text-sm mt-1">
+                  <span className="text-slate-500">上机时间：</span>
+                  <span className="font-medium text-slate-700">{activeUsageRecord.upTime}</span>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1.5">本次挤压重量 (吨)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={unmountForm.extrusionWeight}
+                  onChange={(e) => setUnmountForm({ ...unmountForm, extrusionWeight: parseFloat(e.target.value) })}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm font-mono tabular-nums focus:ring-2 focus:ring-orange-500/30"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1.5">模具磨损情况</label>
+                <select
+                  value={unmountForm.wearCondition}
+                  onChange={(e) => setUnmountForm({ ...unmountForm, wearCondition: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-orange-500/30"
+                >
+                  <option value="正常">正常 - 无需维修</option>
+                  <option value="轻微磨损">轻微磨损 - 可继续使用</option>
+                  <option value="中度磨损">中度磨损 - 建议维修</option>
+                  <option value="严重磨损">严重磨损 - 立即维修</option>
+                </select>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3 bg-slate-50/50">
+              <button
+                onClick={() => setShowUnmountModal(false)}
+                className="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  unmountDieFromMachine(activeUsageRecord.id, unmountForm.extrusionWeight, unmountForm.wearCondition);
+                  setShowUnmountModal(false);
+                }}
+                className="px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-orange-600 to-amber-600 rounded-lg hover:from-orange-700 hover:to-amber-700 shadow-md shadow-orange-500/25 flex items-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                确认下机
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 维修登记模态框 */}
+      {showRepairModal && selected && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-amber-50 to-yellow-50">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                <Settings className="w-5 h-5 text-amber-600" />
+                送修保养登记
+              </h3>
+              <button onClick={() => setShowRepairModal(false)} className="w-8 h-8 rounded-lg hover:bg-white/60 flex items-center justify-center text-slate-500">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="p-4 rounded-xl bg-amber-50/50 border border-amber-100">
+                <div className="text-sm">
+                  <span className="text-slate-500">模具：</span>
+                  <span className="font-mono font-bold text-slate-800">{selected.dieNumber}</span>
+                </div>
+                <div className="text-sm mt-1">
+                  <span className="text-slate-500">已上机次数：</span>
+                  <span className="font-medium text-slate-700">{selected.machineCount} / {selected.maxMachineCount} 次</span>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-600 block mb-1.5">维修说明</label>
+                <textarea
+                  value={repairNote}
+                  onChange={(e) => setRepairNote(e.target.value)}
+                  placeholder="请描述维修内容或保养项目..."
+                  rows={3}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-amber-500/30 resize-none"
+                />
+              </div>
+              <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded-lg">
+                <div className="flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                  送修后模具状态将变更为"维修中"，维修完成后可点击"维修完成"恢复待用状态
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3 bg-slate-50/50">
+              <button
+                onClick={() => setShowRepairModal(false)}
+                className="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  addDieRepairRecord(selected.id, repairNote);
+                  setShowRepairModal(false);
+                }}
+                className="px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-amber-600 to-yellow-600 rounded-lg hover:from-amber-700 hover:to-yellow-700 shadow-md shadow-amber-500/25 flex items-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                确认送修
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

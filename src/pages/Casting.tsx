@@ -22,8 +22,10 @@ const statusConfig: Record<string, { label: string; icon: typeof CheckCircle; cl
 
 export default function Casting() {
   const castBillets = useProductionStore((s) => s.castBillets);
+  const addCastBillet = useProductionStore((s) => s.addCastBillet);
   const [activeTab, setActiveTab] = useState<'list' | 'add'>('list');
   const [search, setSearch] = useState('');
+  const [operator] = useState('张师傅');
 
   const [form, setForm] = useState<Record<string, number>>({
     si: 0.52, fe: 0.31, cu: 0.18, mn: 0.08, mg: 0.85, cr: 0.02, zn: 0.05, ti: 0.04,
@@ -267,6 +269,36 @@ export default function Casting() {
                 取消
               </button>
               <button
+                onClick={() => {
+                  const today = new Date();
+                  const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+                  const seq = String(castBillets.filter(b => b.batchNumber.startsWith(`ZB${dateStr}`)).length + 1).padStart(3, '0');
+                  const batchNumber = `ZB${dateStr}${seq}`;
+                  const isQualified = alloyElements.every(e => checkElement(e.key, form[e.key]));
+                  
+                  addCastBillet({
+                    batchNumber,
+                    si: form.si,
+                    fe: form.fe,
+                    cu: form.cu,
+                    mn: form.mn,
+                    mg: form.mg,
+                    cr: form.cr,
+                    zn: form.zn,
+                    ti: form.ti,
+                    status: isQualified ? 'qualified' : 'unqualified',
+                    castingDate: today.toISOString().slice(0, 10),
+                    homogenizationTemp: form.homogenizationTemp,
+                    homogenizationTime: form.homogenizationTime,
+                    weight: form.weight,
+                  });
+                  
+                  setForm({
+                    si: 0.52, fe: 0.31, cu: 0.18, mn: 0.08, mg: 0.85, cr: 0.02, zn: 0.05, ti: 0.04,
+                    homogenizationTemp: 565, homogenizationTime: 8, weight: 3200,
+                  });
+                  setActiveTab('list');
+                }}
                 className="px-6 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-orange-500 to-amber-500 rounded-lg hover:from-orange-600 hover:to-amber-600 shadow-md shadow-orange-500/25 transition-all flex items-center gap-2"
               >
                 <CheckCircle className="w-4 h-4" />
