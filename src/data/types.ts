@@ -89,6 +89,9 @@ export interface QuenchingRecord {
   id: string;
   batchId: string;
   batchNumber: string;
+  profileType?: string;
+  outputWeight?: number;
+  sourceMachineNo?: string;
   status: 'pending' | 'processing' | 'completed';
   airTemp: number;
   airSpeed: number;
@@ -112,6 +115,9 @@ export interface AgingRecord {
   id: string;
   batchId: string;
   batchNumber: string;
+  profileType?: string;
+  outputWeight?: number;
+  quenchingRecordId?: string;
   furnaceNo: string;
   chargeAmount: number;
   startTime: string;
@@ -129,6 +135,9 @@ export interface SurfaceRecord {
   id: string;
   batchId: string;
   batchNumber: string;
+  profileType?: string;
+  outputWeight?: number;
+  agingRecordId?: string;
   processType: 'oxidation' | 'spraying';
   status: 'pending' | 'processing' | 'completed';
   bathTemp: number;

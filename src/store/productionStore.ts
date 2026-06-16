@@ -58,10 +58,16 @@ interface ProductionState {
   completeExtrusionBatch: (id: string, outputWeight: number) => void;
   addQuenchingRecord: (record: Omit<QuenchingRecord, 'id'>) => void;
   updateQuenchingRecord: (id: string, data: Partial<QuenchingRecord>) => void;
+  startQuenching: (id: string, operator: string) => void;
+  completeQuenching: (id: string, data: { airTemp: number; airSpeed: number; zone1Temp: number; zone2Temp: number; zone3Temp: number; coolingRate: number; hardness: number }) => void;
   addAgingRecord: (record: Omit<AgingRecord, 'id'>) => void;
   updateAgingRecord: (id: string, data: Partial<AgingRecord>) => void;
+  createAgingFromQuenching: (quenchingId: string, furnaceNo: string, chargeAmount: number, operator: string) => void;
+  completeAging: (id: string) => void;
   addSurfaceRecord: (record: Omit<SurfaceRecord, 'id'>) => void;
   updateSurfaceRecord: (id: string, data: Partial<SurfaceRecord>) => void;
+  createSurfaceFromAging: (agingId: string, processType: 'oxidation' | 'spraying', operator: string) => void;
+  completeSurfaceRecord: (id: string, data: Partial<SurfaceRecord>) => void;
   addPackageRecord: (record: Omit<PackageRecord, 'id'>) => void;
   updateRealtimeData: () => void;
   manualRefreshRealtime: (batchId: string) => void;
@@ -408,6 +414,9 @@ export const useProductionStore = create<ProductionState>()(
           const newQuenching: Omit<QuenchingRecord, 'id'> = {
             batchId: batch.id,
             batchNumber: batch.batchNumber,
+            profileType: batch.profileType,
+            outputWeight: outputWeight,
+            sourceMachineNo: batch.machineNo,
             status: 'pending',
             airTemp: 0,
             airSpeed: 0,
@@ -450,6 +459,57 @@ export const useProductionStore = create<ProductionState>()(
           ),
         })),
 
+      startQuenching: (id, operator) => {
+        const now = new Date();
+        set((state) => {
+          const record = state.quenchingRecords.find(r => r.id === id);
+          if (!record || record.status !== 'pending') return state;
+          return {
+            quenchingRecords: state.quenchingRecords.map(r =>
+              r.id === id ? {
+                ...r,
+                status: 'processing' as const,
+                startTime: formatDateTime(now),
+                operator,
+                airTemp: 28 + Math.random() * 4,
+                airSpeed: 16 + Math.random() * 4,
+                zone1Temp: 250 + Math.random() * 10,
+                zone2Temp: 170 + Math.random() * 10,
+                zone3Temp: 100 + Math.random() * 8,
+              } : r
+            ),
+          };
+        });
+        get().computeProcessStatus();
+      },
+
+      completeQuenching: (id, data) => {
+        const now = new Date();
+        set((state) => {
+          const record = state.quenchingRecords.find(r => r.id === id);
+          if (!record || (record.status !== 'processing' && record.status !== 'pending')) return state;
+          const coolingRate = 35 + Math.random() * 15;
+          const hardness = 11 + Math.random() * 4;
+          return {
+            quenchingRecords: state.quenchingRecords.map(r =>
+              r.id === id ? {
+                ...r,
+                status: 'completed' as const,
+                endTime: formatDateTime(now),
+                airTemp: data.airTemp,
+                airSpeed: data.airSpeed,
+                zone1Temp: data.zone1Temp,
+                zone2Temp: data.zone2Temp,
+                zone3Temp: data.zone3Temp,
+                coolingRate: data.coolingRate || coolingRate,
+                hardness: data.hardness || hardness,
+              } : r
+            ),
+          };
+        });
+        get().computeProcessStatus();
+      },
+
       addAgingRecord: (record) => {
         const newRecord = {
           ...record,
@@ -469,6 +529,50 @@ export const useProductionStore = create<ProductionState>()(
           ),
         })),
 
+      createAgingFromQuenching: (quenchingId, furnaceNo, chargeAmount, operator) => {
+        const now = new Date();
+        set((state) => {
+          const q = state.quenchingRecords.find(r => r.id === quenchingId);
+          if (!q || q.status !== 'completed') return state;
+          const batch = state.extrusionBatches.find(b => b.id === q.batchId);
+          const newAging: Omit<AgingRecord, 'id'> = {
+            batchId: q.batchId,
+            batchNumber: q.batchNumber,
+            profileType: q.profileType || batch?.profileType,
+            outputWeight: q.outputWeight,
+            quenchingRecordId: q.id,
+            furnaceNo,
+            chargeAmount,
+            startTime: formatDateTime(now),
+            tempCurve: [],
+            heatingRate: 60,
+            holdingTemp: 248,
+            holdingTime: 240,
+            coolingRate: 40,
+            operator,
+            status: 'heating',
+          };
+          return {
+            agingRecords: [...state.agingRecords, { ...newAging, id: generateId('ar'), tempCurve: generateTempCurve() }],
+          };
+        });
+        get().computeProcessStatus();
+      },
+
+      completeAging: (id) => {
+        const now = new Date();
+        set((state) => ({
+          agingRecords: state.agingRecords.map(r =>
+            r.id === id ? {
+              ...r,
+              status: 'completed' as const,
+              endTime: formatDateTime(now),
+            } : r
+          ),
+        }));
+        get().computeProcessStatus();
+      },
+
       addSurfaceRecord: (record) => {
         set((state) => ({
           surfaceRecords: [
@@ -485,6 +589,53 @@ export const useProductionStore = create<ProductionState>()(
             r.id === id ? { ...r, ...data } : r
           ),
         })),
+
+      createSurfaceFromAging: (agingId, processType, operator) => {
+        const now = new Date();
+        set((state) => {
+          const a = state.agingRecords.find(r => r.id === agingId);
+          if (!a || a.status !== 'completed') return state;
+          const batch = state.extrusionBatches.find(b => b.id === a.batchId);
+          const newSurface: Omit<SurfaceRecord, 'id'> = {
+            batchId: a.batchId,
+            batchNumber: a.batchNumber,
+            profileType: a.profileType || batch?.profileType,
+            outputWeight: a.outputWeight,
+            agingRecordId: a.id,
+            processType,
+            status: 'processing',
+            bathTemp: processType === 'oxidation' ? 19 + Math.random() * 3 : 22 + Math.random() * 3,
+            voltage: processType === 'oxidation' ? 13 + Math.random() * 2 : 0,
+            current: processType === 'oxidation' ? 1180 + Math.random() * 50 : 0,
+            processTime: processType === 'oxidation' ? 33 + Math.random() * 5 : 20 + Math.random() * 5,
+            filmThickness: processType === 'oxidation' ? 10.5 + Math.random() * 2.5 : 60 + Math.random() * 15,
+            color: processType === 'oxidation' ? '银白' : '哑光白',
+            adhesion: 0.5,
+            pretreatment: processType === 'oxidation' ? '脱脂→碱洗→酸洗→中和' : '前处理→钝化',
+            operator,
+            date: formatDate(now),
+          };
+          return {
+            surfaceRecords: [...state.surfaceRecords, { ...newSurface, id: generateId('sr') }],
+          };
+        });
+        get().computeProcessStatus();
+      },
+
+      completeSurfaceRecord: (id, data) => {
+        const now = new Date();
+        set((state) => ({
+          surfaceRecords: state.surfaceRecords.map(r =>
+            r.id === id ? {
+              ...r,
+              ...data,
+              status: 'completed' as const,
+              date: formatDate(now),
+            } : r
+          ),
+        }));
+        get().computeProcessStatus();
+      },
 
       addPackageRecord: (record) => {
         set((state) => ({
